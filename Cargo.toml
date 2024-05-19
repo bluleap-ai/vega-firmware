@@ -45,3 +45,10 @@ incremental = false
 lto = 'fat'
 opt-level = 's'
 overflow-checks = false
+
+[[bin]]
+name = "vega"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false

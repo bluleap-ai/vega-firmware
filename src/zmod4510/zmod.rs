@@ -1,11 +1,11 @@
-use esp_hal::peripherals::I2C0;
+use esp_hal::clock::ClockControl;
+use esp_hal::i2c::Error;
+use esp_hal::i2c::Error::ExecIncomplete;
+use esp_hal::peripherals::{Peripherals, I2C0};
+use esp_hal::system::SystemControl;
 use esp_hal::Async;
-// use embedded_hal_02::{delay::DelayNs, i2c::Error, i2c::I2c};
-use log::{error, info};
-use esp_hal::{
-    clock::ClockControl, delay::Delay, embassy, gpio::Io, i2c::I2C, peripherals::Peripherals,
-    prelude::*, system::SystemControl, timer::timg::TimerGroup,
-};
+use esp_hal::{delay::Delay, i2c::I2C};
+use log::{debug, error};
 
 use super::commands::{self, Command};
 use super::types::*;
@@ -14,28 +14,27 @@ const ZMOD_I2C_ADDRESS: u8 = 0x33;
 const ZMOD4510_PID: u16 = 0x6320;
 
 pub struct Zmod<'a> {
-    i2c: I2C<'a, I2C0, Async>,
+    pub i2c: I2C<'a, I2C0, Async>,
     pub delay: Delay,
-    config: [u8; 6],
-    general_purpose: [u8; 9],
-    mox_er: u16,
-    mox_lr: u16,
-    pid: u16,
-    init_conf: zmod_conf,
-    meas_conf: zmod_conf,
+    pub config: [u8; 6],
+    pub prod_data: [u8; 10],
+    pub mox_er: u16,
+    pub mox_lr: u16,
+    pub pid: u16,
+    pub init_conf: zmod_conf,
+    pub meas_conf: zmod_conf,
 }
 
-impl<'a> Zmod<'a>
-{
+impl<'a> Zmod<'a> {
     pub async fn new(i2c: I2C<'a, I2C0, Async>, delay: Delay) -> Self {
         Zmod {
             i2c,
             delay,
-            config: [0, 0, 0, 0, 0, 0],
-            general_purpose: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+            config: [0; 6],
             mox_er: 0,
             mox_lr: 0,
-            pid: 0,
+            prod_data: [0; 10],
+            pid: ZMOD4510_PID,
             init_conf: zmod_conf::default(),
             meas_conf: zmod_conf::default(),
         }
@@ -45,7 +44,36 @@ impl<'a> Zmod<'a>
         self.i2c
     }
 
+    pub fn read(zmod: &mut Zmod, addr: u8, reg: u8, data: &mut [u8], len: u8) -> i8 {
+        zmod.i2c.write_read(addr, &[reg], data);
+        0
+    }
+
+    pub fn write(zmod: &mut Zmod, addr: u8, reg: u8, data: &mut [u8], len: u8) -> i8 {
+        zmod.i2c.write_read(addr, &[reg], data);
+        0
+    }
+
+    pub fn delay_ms(t: u32) {
+        let peripherals = Peripherals::take();
+        let system = SystemControl::new(peripherals.SYSTEM);
+        let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
+        let delay = Delay::new(&clocks);
+        delay.delay_millis(t);
+    }
+
+    pub async fn read_tracking_number(&mut self, track_num: &mut [u8]) -> Result<(), Error> {
+        self.i2c
+            .write_read(
+                ZMOD_I2C_ADDRESS,
+                &[Command::ZmodAddrTracking.as_byte()],
+                track_num,
+            )
+            .await
+    }
+
     pub async fn read_info(&mut self) -> bool {
+        debug!("Start read information of ZMOD sensor");
         // wait for sensor ready
         let mut status: u8 = 0x80;
         let mut counter: u32 = 0;
@@ -55,9 +83,10 @@ impl<'a> Zmod<'a>
                 .write(ZMOD_I2C_ADDRESS, &[Command::ZmodAddrCmd.as_byte()])
                 .await
             {
-                Ok(_) => info!("NICE"),
+                Ok(_) => debug!("Send ZmodAddrCmd OK"),
                 Err(e) => {
                     error!("FAILED I2C: {:?}", e);
+                    counter += 1;
                     continue;
                 }
             }
@@ -65,11 +94,11 @@ impl<'a> Zmod<'a>
             match self.read_status().await {
                 Ok(ret) => {
                     status = ret;
-                    info!("STATUS: {}", ret)
-                },
-                Err(_) => error!("Failed to read status"),
+                    debug!("STATUS: {}", ret)
+                }
+                Err(e) => error!("Failed to read status, {:?}", e),
             };
-            
+            self.delay.delay_millis(200);
             counter += 1;
         }
 
@@ -79,7 +108,7 @@ impl<'a> Zmod<'a>
 
         let mut data = [0u8; 2];
 
-        if self
+        match self
             .i2c
             .write_read(
                 ZMOD_I2C_ADDRESS,
@@ -87,29 +116,36 @@ impl<'a> Zmod<'a>
                 &mut data,
             )
             .await
-            .is_err()
         {
-            error!("FAILED I2C");
+            Ok(_) => debug!("Send ZmodAddrPid OK"),
+            Err(e) => {
+                error!("FAILED I2C: {:?}", e);
+                return false;
+            }
+        }
+        let pro_id = (data[0] as u16) << 8 | data[1] as u16;
+        if self.pid != pro_id {
+            error!("Unsupported sensor PID: {}", pro_id);
             return false;
         }
 
-        self.pid = (data[0] as u16) << 8 | data[1] as u16;
-
-        if self
+        match self
             .i2c
             .write_read(
                 ZMOD_I2C_ADDRESS,
                 &[Command::ZmodAddrGeneralPupose.as_byte()],
-                &mut self.general_purpose,
+                &mut self.prod_data,
             )
             .await
-            .is_err()
         {
-            error!("FAILED I2C");
-            return false;
+            Ok(_) => debug!("Send ZmodAddrGeneralPupose OK"),
+            Err(e) => {
+                error!("FAILED I2C: {:?}", e);
+                return false;
+            }
         }
 
-        if self
+        match self
             .i2c
             .write_read(
                 ZMOD_I2C_ADDRESS,
@@ -117,19 +153,21 @@ impl<'a> Zmod<'a>
                 &mut self.config,
             )
             .await
-            .is_err()
         {
-            error!("FAILED I2C");
-            return false;
+            Ok(_) => debug!("Send ZmodAddrConf OK"),
+            Err(e) => {
+                error!("FAILED I2C: {:?}", e);
+                return false;
+            }
         }
 
         match self.pid {
             ZMOD4510_PID => {
-                self.meas_conf = zmod_conf::zmod4510();
-                self.init_conf = zmod_conf::zmod45xxi();
+                self.meas_conf = zmod_conf::zmod4510_measurement();
+                self.init_conf = zmod_conf::zmod4510_init();
             }
             _ => {
-                error!("Unsupported!");
+                error!("Unsupported PID {}", self.pid);
                 return false;
             }
         }
@@ -137,181 +175,220 @@ impl<'a> Zmod<'a>
         true
     }
 
-    pub async fn init(&mut self) -> Result<(), ()> {
-        let mut data = [0u8; 4];
-        if self
+    pub async fn init(&mut self) -> Result<(), Error> {
+        debug!("Inititalize ZMOD sensor");
+        let mut data_r = [0u8; 32];
+        let mut hsp: [u8; 16] = [0; 16];
+        match self
             .i2c
-            .write_read(ZMOD_I2C_ADDRESS, &[0xB7], &mut data)
+            .write_read(ZMOD_I2C_ADDRESS, &[0xB7], &mut data_r)
+            .await
+        {
+            Ok(_) => debug!("Send 0xB7 OK"),
+            Err(e) => {
+                return Err(e);
+            }
+        }
+
+        if self
+            .calc_factor(self.init_conf.clone(), &mut hsp)
             .await
             .is_err()
         {
-            return Err(());
+            error!("Failed to calculate factor value");
+            return Err(ExecIncomplete);
         }
 
-        if self.calc_factor(80.0, &mut data).await.is_err() {
-            return Err(());
-        }
-
-        if !self.i2c_write(
-            self.init_conf.h.addr,
-            &mut data,
-            self.init_conf.h.len as usize,
-        ).await {
-            return Err(());
+        match self
+            .i2c_write(
+                self.init_conf.h.addr,
+                &mut hsp,
+                self.init_conf.h.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send init configuration->h OK"),
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let mut d_data = self.init_conf.d.data;
-        if !self.i2c_write(
-            self.init_conf.d.addr,
-            &mut d_data,
-            self.init_conf.d.len as usize,
-        ).await {
-            return Err(());
+        match self
+            .i2c_write(
+                self.init_conf.d.addr,
+                &mut d_data,
+                self.init_conf.d.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send init configuration->d OK"),
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let mut m_data = self.init_conf.m.data;
-        if !self.i2c_write(
-            self.init_conf.m.addr,
-            &mut m_data,
-            self.init_conf.m.len as usize,
-        ).await {
-            return Err(());
+        match self
+            .i2c_write(
+                self.init_conf.m.addr,
+                &mut m_data,
+                self.init_conf.m.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send init configuration->m OK"),
+            Err(e) => {
+                return Err(e);
+            }
         }
 
         let mut s_data = self.init_conf.s.data;
-        if !self.i2c_write(
-            self.init_conf.s.addr,
-            &mut s_data,
-            self.init_conf.s.len as usize,
-        ).await {
-            return Err(());
+        match self
+            .i2c_write(
+                self.init_conf.s.addr,
+                &mut s_data,
+                self.init_conf.s.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send init configuration->s OK"),
+            Err(e) => {
+                return Err(e);
+            }
         }
 
-        if !self.i2c_write(
-            0x93,
-            &mut [self.init_conf.start],
-            self.init_conf.h.len as usize,
-        ).await {
-            return Err(());
+        match self
+            .i2c_write(
+                Command::ZmodAddrCmd.as_byte(),
+                &mut [self.init_conf.start],
+                self.init_conf.h.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send init configuration->start OK"),
+            Err(e) => {
+                return Err(e);
+            }
         }
         let mut status: u8 = 0;
         while status & commands::Command::StatusSequencerRunningMask.as_byte() == 0 {
             status = match self.read_status().await {
                 Ok(ret) => ret,
-                Err(_) => return Err(()),
+                Err(e) => return Err(e),
             };
             self.delay.delay_millis(50);
         }
 
-        if self
+        match self
             .i2c
-            .write_read(ZMOD_I2C_ADDRESS, &[self.init_conf.r.addr], &mut data)
+            .write_read(ZMOD_I2C_ADDRESS, &[self.init_conf.r.addr], &mut data_r)
             .await
-            .is_err()
         {
-            return Err(());
+            Ok(_) => debug!("Send init configuration->r OK"),
+            Err(e) => return Err(e),
         }
 
-        self.mox_lr = ((data[0] as u16) << 8) | data[1] as u16;
-        self.mox_er = ((data[2] as u16) << 8) | data[3] as u16;
+        self.mox_lr = ((data_r[0] as u16) << 8) | data_r[1] as u16;
+        self.mox_er = ((data_r[2] as u16) << 8) | data_r[3] as u16;
 
-        if self
-            .i2c
-            .write_read(ZMOD_I2C_ADDRESS, &[0xB7], &mut data)
+        Ok(())
+    }
+
+    pub async fn i2c_write(&mut self, addr: u8, data: &mut [u8], len: usize) -> Result<(), Error> {
+        let mut send_data = [0x00; 32];
+        send_data[0] = addr;
+        send_data[1..len].copy_from_slice(&data[0..(len - 1)]);
+
+        self.i2c.write(ZMOD_I2C_ADDRESS, &send_data[0..len]).await
+    }
+
+    pub async fn init_meas(&mut self) -> Result<(), Error> {
+        debug!("Initialize measurement configuration for ZMOD sensor");
+        let mut data = [0x00; 10];
+        let mut hsp = [0u8; 16];
+
+        self.calc_factor(self.meas_conf.clone(), &mut hsp).await;
+
+        match self
+            .i2c_write(
+                self.meas_conf.h.addr,
+                &mut hsp,
+                self.meas_conf.h.len as usize,
+            )
             .await
-            .is_err()
         {
-            return Err(());
+            Ok(_) => debug!("Send meas_conf->h OK"),
+            Err(e) => return Err(e),
         }
 
-        if data[0] != 0 {
-            if Command::StatusAccessConflictMask.as_byte() & data[0] != 0 {
-                return Err(());
-            } else if Command::StatusPorEventMask.as_byte() & data[0] != 0 {
-                return Err(());
-            }
+        let mut d_data = self.init_conf.d.data;
+        match self
+            .i2c_write(
+                self.meas_conf.d.addr,
+                &mut d_data,
+                self.meas_conf.d.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send meas_conf->d OK"),
+            Err(e) => return Err(e),
+        }
+
+        let mut m_data = self.init_conf.m.data;
+        match self
+            .i2c_write(
+                self.meas_conf.m.addr,
+                &mut m_data,
+                self.meas_conf.m.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send meas_conf->m OK"),
+            Err(e) => return Err(e),
+        }
+
+        let mut s_data = self.init_conf.s.data;
+        match self
+            .i2c_write(
+                self.meas_conf.s.addr,
+                &mut s_data,
+                self.meas_conf.s.len as usize,
+            )
+            .await
+        {
+            Ok(_) => debug!("Send meas_conf->s OK"),
+            Err(e) => return Err(e),
+        }
+        Ok(())
+    }
+
+    pub async fn start_meas(&mut self) -> Result<(), Error> {
+        debug!("Start measurement of ZMOD sensor");
+        self.i2c_write(
+            Command::ZmodAddrCmd.as_byte(),
+            &mut [self.meas_conf.start],
+            1,
+        )
+        .await
+    }
+
+    pub async fn read_adc(&mut self, data: &mut [u8]) -> Result<(), Error> {
+        match self
+            .i2c
+            .write_read(ZMOD_I2C_ADDRESS, &[self.meas_conf.r.addr], data)
+            .await
+        {
+            Ok(_) => debug!("Read ADC OK"),
+            Err(e) => return Err(e),
         }
 
         Ok(())
     }
 
-    pub async fn i2c_write(&mut self, addr: u8, data: &mut [u8], len: usize) -> bool {
-        let mut send_data = [0x00; 32];
-        send_data[0] = addr;
-        send_data[1..len].copy_from_slice(&data[0..(len - 1)]);
-
-        self.i2c.write(ZMOD_I2C_ADDRESS, &send_data[0..len]).await.is_ok()
-    }
-
-    pub async fn init_meas(&mut self) {
-        let mut data = [0x00; 10];
-        let _ = self.i2c.write_read(ZMOD_I2C_ADDRESS, &[0xB7], &mut data).await;
-        let _ = self.calc_factor(-440.0, &mut data).await;
-        let _ = self.calc_factor(-490.0, &mut data[2..]).await;
-        let _ = self.calc_factor(-540.0, &mut data[4..]).await;
-        let _ = self.calc_factor(-590.0, &mut data[6..]).await;
-        let _ = self.calc_factor(-640.0, &mut data[8..]).await;
-        let mut h_data = self.init_conf.m.data;
-        if !self.i2c_write(
-            self.meas_conf.h.addr,
-            &mut h_data,
-            self.meas_conf.h.len as usize,
-        ).await {
-            error!("I2C ERR");
-        }
-        let mut d_data = self.init_conf.m.data;
-        if !self.i2c_write(
-            self.meas_conf.d.addr,
-            &mut d_data,
-            self.meas_conf.d.len as usize,
-        ).await {
-            error!("I2C ERR");
-        }
-        let mut m_data = self.init_conf.m.data;
-        if !self.i2c_write(
-            self.meas_conf.m.addr,
-            &mut m_data,
-            self.meas_conf.m.len as usize,
-        ).await {
-            error!("I2C ERR");
-        }
-        let mut s_data = self.init_conf.m.data;
-        if !self.i2c_write(
-            self.meas_conf.s.addr,
-            &mut s_data,
-            self.meas_conf.s.len as usize,
-        ).await {
-            error!("I2C ERR");
-        }
-    }
-
-    pub async fn start_meas(&mut self) {
-        if !self.i2c_write(
-            Command::ZmodAddrCmd.as_byte(),
-            &mut [self.meas_conf.start],
-            1,
-        ).await {
-
-        }
-    }
-
-    pub async fn read_adc(&mut self, data: &mut [u8]) -> bool {
-        let mut read_data = [0x00; 1];
-        let _ = self.i2c
-            .write_read(ZMOD_I2C_ADDRESS, &[self.meas_conf.r.addr], data).await;
-
-        let _ = self.i2c
-            .write_read(ZMOD_I2C_ADDRESS, &[0xB7], &mut read_data).await;
-
-        if read_data[0] != 0 {
-            return false;
-        }
-        true
-    }
-
-    pub async fn read_status(&mut self) -> Result<u8, ()> {
+    pub async fn read_status(&mut self) -> Result<u8, Error> {
         let mut status = [0u8; 1];
-        if self
+        match self
             .i2c
             .write_read(
                 ZMOD_I2C_ADDRESS,
@@ -319,53 +396,51 @@ impl<'a> Zmod<'a>
                 &mut status,
             )
             .await
-            .is_err()
         {
-            error!("I2C ERROR");
-            return Err(());
+            Ok(_) => Ok(status[0]),
+            Err(e) => Err(e),
         }
-
-        Ok(status[0])
     }
 
-    pub async fn calc_factor(&mut self, factor: f32, data: &mut [u8]) -> Result<(), ()> {
-        let hspf: f32;
-        hspf = (-((self.config[2] as f32) * 256.0 + (self.config[3] as f32))
-            * (((self.config[4] as f32) + 640.0) * ((self.config[5] as f32) + factor) - 512000.0))
-            / 12288000.0;
+    pub async fn calc_factor(&mut self, zmod_config: zmod_conf, hsp: &mut [u8]) -> Result<(), ()> {
+        let mut hsp_temp: [i16; 8] = [0; 8];
+        let mut hspf: f32;
+        let mut count: usize = 0;
 
-        if 0.0 > hspf || 4096.0 < hspf {
-            return Err(());
+        while count < zmod_config.h.len as usize {
+            hsp_temp[count / 2] =
+                ((zmod_config.h.data[count] as i16) << 8) + zmod_config.h.data[count + 1] as i16;
+            hspf = (-(((self.config[2] as f32) * 256.0) + self.config[3] as f32)
+                * (((self.config[4] as f32) + 640.0)
+                    * ((self.config[5] as f32) + (hsp_temp[count / 2] as f32))
+                    - 512000.0))
+                / 12288000.0;
+            hsp[count] = ((hspf as u16) >> 8) as u8;
+            hsp[count + 1] = ((hspf as u16) & 0x00FF) as u8;
+            count += 2;
         }
-
-        data[0] = (((hspf as u32) >> 8) | 0xFF) as u8;
-        data[1] = ((hspf as u32) | 0xFF) as u8;
 
         Ok(())
     }
 
     pub async fn calc_rmox(&mut self, adc_result: &[u8], rmox: &mut [f32]) -> Result<(), ()> {
         let mut count: usize = 0;
-        let mut adc_value: u16 = 0;
-        let mut rmox_local: f32 = 0.0;
+        let mut rmox_index: usize = 0;
 
         while count < (self.meas_conf.r.len as usize) {
-            adc_value = ((adc_result[count] as u16) << 8) | (adc_result[count + 1] as u16);
+            let adc_value = ((adc_result[count] as u16) << 8) | (adc_result[count + 1] as u16);
             if 0.0 >= (adc_value as f32 - self.mox_lr as f32) {
-                rmox_local = 1e-3;
+                rmox[rmox_index] = 1e-3;
+                rmox_index += 1;
             } else if 0.0 >= (self.mox_er as f32 - adc_value as f32) {
-                rmox_local = 1e12;
+                rmox[rmox_index] = 10e9;
+                rmox_index += 1;
             } else {
-                rmox_local =
+                rmox[rmox_index] =
                     (self.config[0] as f32) * 1e3 * (adc_value as f32 - self.mox_lr as f32)
                         / (self.mox_er as f32 - adc_value as f32);
+                rmox_index += 1;
             }
-
-            if 1e12 < rmox_local {
-                rmox_local = 1e12;
-            }
-
-            rmox[count / 2] = rmox_local;
 
             count += 2;
         }
