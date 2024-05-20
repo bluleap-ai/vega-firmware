@@ -8,11 +8,11 @@ pub enum Command {
     ZmodAddrStatus,
     ZmodAddrTracking,
     StatusSequencerRunningMask,
-    StatusSleepTimerEnabledMask,
-    StatusAlarmMask,
-    StatusLastSeqStepMask,
-    StatusPorEventMask,
-    StatusAccessConflictMask,
+    // StatusSleepTimerEnabledMask,
+    // StatusAlarmMask,
+    // StatusLastSeqStepMask,
+    // StatusPorEventMask,
+    // StatusAccessConflictMask,
 }
 
 impl Command {
@@ -25,11 +25,11 @@ impl Command {
             Self::ZmodAddrStatus => 0x94,
             Self::ZmodAddrTracking => 0x3A,
             Self::StatusSequencerRunningMask => 0x80,
-            Self::StatusSleepTimerEnabledMask => 0x40,
-            Self::StatusAlarmMask => 0x20,
-            Self::StatusLastSeqStepMask => 0x1F,
-            Self::StatusPorEventMask => 0x80,
-            Self::StatusAccessConflictMask => 0x40,
+            // Self::StatusSleepTimerEnabledMask => 0x40,
+            // Self::StatusAlarmMask => 0x20,
+            // Self::StatusLastSeqStepMask => 0x1F,
+            // Self::StatusPorEventMask => 0x80,
+            // Self::StatusAccessConflictMask => 0x40,
         }
     }
 }

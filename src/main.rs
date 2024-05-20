@@ -11,7 +11,7 @@ use esp_hal::{
 };
 
 mod zmod4510;
-use log::{error, info};
+use log::{debug, info};
 use zmod4510::{
     commands::Command,
     types::{Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev},
@@ -24,11 +24,26 @@ use core::mem::MaybeUninit;
 extern "C" {
     pub fn init_oaq_2nd_gen(oaq_handle: &mut Oaq2ndGenHandle) -> i8;
     pub fn calc_oaq_2nd_gen(
-        oaq_handle: &mut Oaq2ndGenHandle,
-        zmod_handle: &mut ZmodDev,
-        algo_input: &Oaq2ndGenInputs,
-        results: &Oaq2ndGenResults,
+        oaq_handle: *const Oaq2ndGenHandle,
+        zmod_handle: *const ZmodDev,
+        algo_input: *const Oaq2ndGenInputs,
+        results: *const Oaq2ndGenResults,
     ) -> i8;
+}
+
+unsafe extern "C" fn i2c_delay_ms(t: u32) {
+    debug!("I2C delay");
+    crate::Zmod::delay_ms(t)
+}
+
+unsafe extern "C" fn i2c_write(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
+    debug!("I2C Write");
+    crate::Zmod::write(addr, reg, data, len)
+}
+
+unsafe extern "C" fn i2c_read(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
+    debug!("I2C Read");
+    crate::Zmod::read(addr, reg, data, len)
 }
 
 #[global_allocator]
@@ -52,7 +67,7 @@ async fn run() {
 }
 
 #[main]
-async fn main(spawner: Spawner) -> ! {
+async fn main(_spawner: Spawner) -> ! {
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
@@ -162,32 +177,29 @@ async fn main(spawner: Spawner) -> ! {
             continue;
         }
         let mut data = [0x00; 18];
-        let mut rmox: [f32; 32] = [0.0; 32];
         let _ = zmod_sensor.read_adc(&mut data).await;
-
-        let _ = zmod_sensor.calc_rmox(&data, &mut rmox).await;
         info!("ADC:    {:?}", data);
 
         oaq_inputs.adc_result = data;
         oaq_inputs.humidity_pct = 50.0;
         oaq_inputs.temperature_degc = 20.0;
 
-        let prod = zmod_sensor.prod_data.clone();
+        let prod = zmod_sensor.prod_data;
         let init_cfg = zmod_sensor.init_conf.clone();
         let meas_cfg = zmod_sensor.meas_conf.clone();
 
         let mut dev = ZmodDev {
             i2c_addr: 0x33,
-            config: zmod_sensor.config.clone(),
-            mox_er: zmod_sensor.mox_er.clone(),
-            mox_lr: zmod_sensor.mox_lr.clone(),
+            config: zmod_sensor.config,
+            mox_er: zmod_sensor.mox_er,
+            mox_lr: zmod_sensor.mox_lr,
             pid: zmod_sensor.pid,
-            prod_data: &prod,
+            prod_data: prod.as_ptr(),
             init_config: &init_cfg,
             meas_config: &meas_cfg,
-            delay: &Zmod::delay_ms,
-            read: &Zmod::read,
-            write: &Zmod::write,
+            delay: i2c_delay_ms,
+            read: i2c_read,
+            write: i2c_write,
         };
 
         unsafe {
@@ -207,13 +219,13 @@ async fn main(spawner: Spawner) -> ! {
                 } else {
                     info!("ZMOD4510: Warm up");
                 }
-                info!(" Rmox0 : {:.3}", oaq_result.rmox[0] / 1e3);
-                info!(" Rmox1 : {:.3}", oaq_result.rmox[1] / 1e3);
-                info!(" Rmox2 : {:.3}", oaq_result.rmox[2] / 1e3);
-                info!(" Rmox3 : {:.3}", oaq_result.rmox[3] / 1e3);
-                info!(" Rmox4 : {:.3}", oaq_result.rmox[4] / 1e3);
-                info!(" Rmox5 : {:.3}", oaq_result.rmox[5] / 1e3);
-                info!(" Rmox6 : {:.3}", oaq_result.rmox[6] / 1e3);
+                info!(" Rmox0 : {:.3} kOhm", oaq_result.rmox[0] / 1e3);
+                info!(" Rmox1 : {:.3} kOhm", oaq_result.rmox[1] / 1e3);
+                info!(" Rmox2 : {:.3} kOhm", oaq_result.rmox[2] / 1e3);
+                info!(" Rmox3 : {:.3} kOhm", oaq_result.rmox[3] / 1e3);
+                info!(" Rmox4 : {:.3} kOhm", oaq_result.rmox[4] / 1e3);
+                info!(" Rmox5 : {:.3} kOhm", oaq_result.rmox[5] / 1e3);
+                info!(" Rmox6 : {:.3} kOhm", oaq_result.rmox[6] / 1e3);
                 info!(" O3_conc_ppb = {:.3}", oaq_result.o3_conc_ppb);
                 info!(" Fast AQI = {}", oaq_result.fast_aqi);
                 info!(" EPA AQI = {}", oaq_result.epa_aqi);

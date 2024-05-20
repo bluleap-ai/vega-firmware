@@ -1,7 +1,4 @@
-use esp_hal::{delay::Delay, i2c::I2C, peripherals::I2C0};
-
-use super::Zmod;
-
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Oaq2ndGenHandle {
     pub sample_cnt: u32,
@@ -12,6 +9,7 @@ pub struct Oaq2ndGenHandle {
     pub o3_8h_ppb: f32,
 }
 
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Oaq2ndGenInputs {
     pub adc_result: [u8; 18],
@@ -19,6 +17,7 @@ pub struct Oaq2ndGenInputs {
     pub temperature_degc: f32,
 }
 
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Oaq2ndGenResults {
     pub rmox: [f32; 8],
@@ -27,42 +26,43 @@ pub struct Oaq2ndGenResults {
     pub epa_aqi: u16,
 }
 
-#[derive(Copy, Clone)]
-pub struct ZmodDev<'a> {
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ZmodDev {
     pub i2c_addr: u8,
     pub config: [u8; 6],
     pub mox_er: u16,
     pub mox_lr: u16,
     pub pid: u16,
-    pub prod_data: &'a [u8; 10],
-    pub init_config: &'a zmod_conf,
-    pub meas_config: &'a zmod_conf,
-    pub delay: &'a dyn Fn(u32),
-    pub read: &'a dyn Fn(&mut Zmod, u8, u8, &mut [u8], u8) -> i8,
-    pub write: &'a dyn Fn(&mut Zmod, u8, u8, &mut [u8], u8) -> i8,
+    pub prod_data: *const u8,
+    pub init_config: *const ZmodConf,
+    pub meas_config: *const ZmodConf,
+    pub delay: unsafe extern "C" fn(u32),
+    pub read: unsafe extern "C" fn(u8, u8, *const u8, u8) -> i8,
+    pub write: unsafe extern "C" fn(u8, u8, *const u8, u8) -> i8,
 }
 
 #[derive(Debug, Clone)]
-pub struct zmod_conf_str {
+pub struct ZmodConfStr {
     pub addr: u8,
     pub len: u8,
     pub data: [u8; 30],
 }
 
 #[derive(Debug, Clone)]
-pub struct zmod_conf {
+pub struct ZmodConf {
     pub start: u8,
-    pub h: zmod_conf_str,
-    pub d: zmod_conf_str,
-    pub m: zmod_conf_str,
-    pub s: zmod_conf_str,
-    pub r: zmod_conf_str,
+    pub h: ZmodConfStr,
+    pub d: ZmodConfStr,
+    pub m: ZmodConfStr,
+    pub s: ZmodConfStr,
+    pub r: ZmodConfStr,
     pub prod_data_len: u8,
 }
 
-impl zmod_conf_str {
+impl ZmodConfStr {
     fn default() -> Self {
-        zmod_conf_str {
+        ZmodConfStr {
             addr: 0x00,
             len: 0x00,
             data: [0; 30],
@@ -70,23 +70,23 @@ impl zmod_conf_str {
     }
 }
 
-impl zmod_conf {
+impl ZmodConf {
     pub fn default() -> Self {
-        zmod_conf {
+        ZmodConf {
             start: 0x00,
-            h: zmod_conf_str::default(),
-            d: zmod_conf_str::default(),
-            m: zmod_conf_str::default(),
-            s: zmod_conf_str::default(),
-            r: zmod_conf_str::default(),
+            h: ZmodConfStr::default(),
+            d: ZmodConfStr::default(),
+            m: ZmodConfStr::default(),
+            s: ZmodConfStr::default(),
+            r: ZmodConfStr::default(),
             prod_data_len: 0,
         }
     }
 
     pub fn zmod4510_measurement() -> Self {
-        zmod_conf {
+        ZmodConf {
             start: 0x80,
-            h: zmod_conf_str {
+            h: ZmodConfStr {
                 addr: 0x40,
                 len: 4,
                 data: [
@@ -95,7 +95,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            d: zmod_conf_str {
+            d: ZmodConfStr {
                 addr: 0x50,
                 len: 2,
                 data: [
@@ -104,7 +104,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            m: zmod_conf_str {
+            m: ZmodConfStr {
                 addr: 0x60,
                 len: 2,
                 data: [
@@ -113,7 +113,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            s: zmod_conf_str {
+            s: ZmodConfStr {
                 addr: 0x68,
                 len: 18,
                 data: [
@@ -122,7 +122,7 @@ impl zmod_conf {
                     0x00, 0x0C, 0x80, 0x14,
                 ],
             },
-            r: zmod_conf_str {
+            r: ZmodConfStr {
                 addr: 0x97,
                 len: 18,
                 data: [
@@ -136,9 +136,9 @@ impl zmod_conf {
     }
 
     pub fn zmod4510_init() -> Self {
-        zmod_conf {
+        ZmodConf {
             start: 0x80,
-            h: zmod_conf_str {
+            h: ZmodConfStr {
                 addr: 0x40,
                 len: 2,
                 data: [
@@ -147,7 +147,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            d: zmod_conf_str {
+            d: ZmodConfStr {
                 addr: 0x50,
                 len: 2,
                 data: [
@@ -156,7 +156,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            m: zmod_conf_str {
+            m: ZmodConfStr {
                 addr: 0x60,
                 len: 2,
                 data: [
@@ -165,7 +165,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            s: zmod_conf_str {
+            s: ZmodConfStr {
                 addr: 0x68,
                 len: 4,
                 data: [
@@ -174,7 +174,7 @@ impl zmod_conf {
                     0x00, 0x00, 0x00, 0x00,
                 ],
             },
-            r: zmod_conf_str {
+            r: ZmodConfStr {
                 addr: 0x97,
                 len: 4,
                 data: [

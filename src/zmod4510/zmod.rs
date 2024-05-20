@@ -21,8 +21,8 @@ pub struct Zmod<'a> {
     pub mox_er: u16,
     pub mox_lr: u16,
     pub pid: u16,
-    pub init_conf: zmod_conf,
-    pub meas_conf: zmod_conf,
+    pub init_conf: ZmodConf,
+    pub meas_conf: ZmodConf,
 }
 
 impl<'a> Zmod<'a> {
@@ -35,24 +35,30 @@ impl<'a> Zmod<'a> {
             mox_lr: 0,
             prod_data: [0; 10],
             pid: ZMOD4510_PID,
-            init_conf: zmod_conf::default(),
-            meas_conf: zmod_conf::default(),
+            init_conf: ZmodConf::default(),
+            meas_conf: ZmodConf::default(),
         }
     }
 
-    pub async fn destroy(self) -> I2C<'a, I2C0, Async> {
-        self.i2c
-    }
+    // pub async fn destroy(self) -> I2C<'a, I2C0, Async> {
+    //     self.i2c
+    // }
 
-    pub fn read(zmod: &mut Zmod, addr: u8, reg: u8, data: &mut [u8], len: u8) -> i8 {
+    pub fn read(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
         info!("I2C read from Renesas Lib");
-        zmod.i2c.write_read(addr, &[reg], data);
+        let _ = addr;
+        let _ = reg;
+        let _ = data;
+        let _ = len;
         0
     }
 
-    pub fn write(zmod: &mut Zmod, addr: u8, reg: u8, data: &mut [u8], len: u8) -> i8 {
+    pub fn write(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
         info!("I2C write from Renesas Lib");
-        zmod.i2c.write_read(addr, &[reg], data);
+        let _ = addr;
+        let _ = reg;
+        let _ = data;
+        let _ = len;
         0
     }
 
@@ -166,8 +172,8 @@ impl<'a> Zmod<'a> {
 
         match self.pid {
             ZMOD4510_PID => {
-                self.meas_conf = zmod_conf::zmod4510_measurement();
-                self.init_conf = zmod_conf::zmod4510_init();
+                self.meas_conf = ZmodConf::zmod4510_measurement();
+                self.init_conf = ZmodConf::zmod4510_init();
             }
             _ => {
                 error!("Unsupported PID {}", self.pid);
@@ -275,7 +281,7 @@ impl<'a> Zmod<'a> {
             }
         }
         let mut status: u8 = 0;
-        while status & commands::Command::StatusSequencerRunningMask.as_byte() == 0 {
+        while status & commands::Command::StatusSequencerRunningMask.as_byte() != 0 {
             status = match self.read_status().await {
                 Ok(ret) => ret,
                 Err(e) => return Err(e),
@@ -308,10 +314,9 @@ impl<'a> Zmod<'a> {
 
     pub async fn init_meas(&mut self) -> Result<(), Error> {
         debug!("Initialize measurement configuration for ZMOD sensor");
-        let mut data = [0x00; 10];
         let mut hsp = [0u8; 16];
 
-        self.calc_factor(self.meas_conf.clone(), &mut hsp).await;
+        let _ = self.calc_factor(self.meas_conf.clone(), &mut hsp).await;
 
         match self
             .i2c_write(
@@ -405,7 +410,7 @@ impl<'a> Zmod<'a> {
         }
     }
 
-    pub async fn calc_factor(&mut self, zmod_config: zmod_conf, hsp: &mut [u8]) -> Result<(), ()> {
+    pub async fn calc_factor(&mut self, zmod_config: ZmodConf, hsp: &mut [u8]) -> Result<(), ()> {
         let mut hsp_temp: [i16; 8] = [0; 8];
         let mut hspf: f32;
         let mut count: usize = 0;
@@ -426,28 +431,28 @@ impl<'a> Zmod<'a> {
         Ok(())
     }
 
-    pub async fn calc_rmox(&mut self, adc_result: &[u8], rmox: &mut [f32]) -> Result<(), ()> {
-        let mut count: usize = 0;
-        let mut rmox_index: usize = 0;
+    // pub async fn calc_rmox(&mut self, adc_result: &[u8], rmox: &mut [f32]) -> Result<(), ()> {
+    //     let mut count: usize = 0;
+    //     let mut rmox_index: usize = 0;
 
-        while count < (self.meas_conf.r.len as usize) {
-            let adc_value = ((adc_result[count] as u16) << 8) | (adc_result[count + 1] as u16);
-            if 0.0 >= (adc_value as f32 - self.mox_lr as f32) {
-                rmox[rmox_index] = 1e-3;
-                rmox_index += 1;
-            } else if 0.0 >= (self.mox_er as f32 - adc_value as f32) {
-                rmox[rmox_index] = 10e9;
-                rmox_index += 1;
-            } else {
-                rmox[rmox_index] =
-                    (self.config[0] as f32) * 1e3 * (adc_value as f32 - self.mox_lr as f32)
-                        / (self.mox_er as f32 - adc_value as f32);
-                rmox_index += 1;
-            }
+    //     while count < (self.meas_conf.r.len as usize) {
+    //         let adc_value = ((adc_result[count] as u16) << 8) | (adc_result[count + 1] as u16);
+    //         if 0.0 >= (adc_value as f32 - self.mox_lr as f32) {
+    //             rmox[rmox_index] = 1e-3;
+    //             rmox_index += 1;
+    //         } else if 0.0 >= (self.mox_er as f32 - adc_value as f32) {
+    //             rmox[rmox_index] = 10e9;
+    //             rmox_index += 1;
+    //         } else {
+    //             rmox[rmox_index] =
+    //                 (self.config[0] as f32) * 1e3 * (adc_value as f32 - self.mox_lr as f32)
+    //                     / (self.mox_er as f32 - adc_value as f32);
+    //             rmox_index += 1;
+    //         }
 
-            count += 2;
-        }
+    //         count += 2;
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
