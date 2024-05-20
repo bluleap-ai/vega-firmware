@@ -99,12 +99,6 @@ async fn main(_spawner: Spawner) -> ! {
         o3_8h_ppb: 0.0,
     };
 
-    let mut oaq_inputs = Oaq2ndGenInputs {
-        adc_result: [0; 18],
-        humidity_pct: 0.0,
-        temperature_degc: 0.0,
-    };
-
     unsafe {
         init_oaq_2nd_gen(&mut oaq_handle);
     }
@@ -185,9 +179,11 @@ async fn main(_spawner: Spawner) -> ! {
             error!("Error during reading status register");
         }
 
-        oaq_inputs.adc_result = data;
-        oaq_inputs.humidity_pct = 50.0;
-        oaq_inputs.temperature_degc = 20.0;
+        let oaq_inputs = Oaq2ndGenInputs {
+            adc_result: data.as_mut_ptr(),
+            humidity_pct: 50.0,
+            temperature_degc: 20.0,
+        };
 
         let prod = zmod_sensor.prod_data;
         let init_cfg = zmod_sensor.init_conf.clone();
@@ -214,7 +210,7 @@ async fn main(_spawner: Spawner) -> ! {
                 fast_aqi: 0,
                 epa_aqi: 0,
             };
-            let ret = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &mut oaq_inputs, &mut oaq_result);
+            let ret = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &oaq_inputs, &mut oaq_result);
             if ret != 0 && ret != 1 {
                 panic!("ERROR {} during calculateing algorithm, exit", ret);
             } else {

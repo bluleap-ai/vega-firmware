@@ -330,7 +330,7 @@ impl<'a> Zmod<'a> {
             Err(e) => return Err(e),
         }
 
-        let mut d_data = self.init_conf.d.data;
+        let mut d_data = self.meas_conf.d.data;
         match self
             .i2c_write(
                 self.meas_conf.d.addr,
@@ -343,7 +343,7 @@ impl<'a> Zmod<'a> {
             Err(e) => return Err(e),
         }
 
-        let mut m_data = self.init_conf.m.data;
+        let mut m_data = self.meas_conf.m.data;
         match self
             .i2c_write(
                 self.meas_conf.m.addr,
@@ -356,7 +356,7 @@ impl<'a> Zmod<'a> {
             Err(e) => return Err(e),
         }
 
-        let mut s_data = self.init_conf.s.data;
+        let mut s_data = self.meas_conf.s.data;
         match self
             .i2c_write(
                 self.meas_conf.s.addr,

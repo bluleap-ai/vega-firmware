@@ -12,7 +12,7 @@ pub struct Oaq2ndGenHandle {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Oaq2ndGenInputs {
-    pub adc_result: [u8; 18],
+    pub adc_result: *const u8,
     pub humidity_pct: f32,
     pub temperature_degc: f32,
 }
@@ -35,11 +35,11 @@ pub struct ZmodDev {
     pub mox_lr: u16,
     pub pid: u16,
     pub prod_data: *const u8,
-    pub init_config: *const ZmodConf,
-    pub meas_config: *const ZmodConf,
-    pub delay: unsafe extern "C" fn(u32),
     pub read: unsafe extern "C" fn(u8, u8, *const u8, u8) -> i8,
     pub write: unsafe extern "C" fn(u8, u8, *const u8, u8) -> i8,
+    pub delay: unsafe extern "C" fn(u32),
+    pub init_config: *const ZmodConf,
+    pub meas_config: *const ZmodConf,
 }
 
 #[derive(Debug, Clone)]
