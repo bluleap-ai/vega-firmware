@@ -307,9 +307,13 @@ impl<'a> Zmod<'a> {
     pub async fn i2c_write(&mut self, addr: u8, data: &mut [u8], len: usize) -> Result<(), Error> {
         let mut send_data = [0x00; 32];
         send_data[0] = addr;
-        send_data[1..len].copy_from_slice(&data[0..(len - 1)]);
 
-        self.i2c.write(ZMOD_I2C_ADDRESS, &send_data[0..len]).await
+        for i in 1..len+1 {
+            send_data[i] = data[i-1];
+        }
+
+        debug!("I2C Write: ADDR {} - DATA {:?}", send_data[0], &send_data[1..len+1]);
+        self.i2c.write(ZMOD_I2C_ADDRESS, &send_data[0..len+1]).await
     }
 
     pub async fn init_meas(&mut self) -> Result<(), Error> {
