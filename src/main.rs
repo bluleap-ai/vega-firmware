@@ -203,7 +203,7 @@ async fn main(spawner: Spawner) -> ! {
             } else {
                 info!("------------ Measurement result ------------");
                 if ret == 0 {
-                    info!("Everything is OK (not stable)");
+                    info!("Everything is OK");
                 } else {
                     info!("ZMOD4510 sensor is in stabilization");
                 }
