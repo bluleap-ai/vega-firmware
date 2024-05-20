@@ -5,7 +5,7 @@ use esp_hal::peripherals::{Peripherals, I2C0};
 use esp_hal::system::SystemControl;
 use esp_hal::Async;
 use esp_hal::{delay::Delay, i2c::I2C};
-use log::{debug, error};
+use log::{debug, error, info};
 
 use super::commands::{self, Command};
 use super::types::*;
@@ -45,16 +45,19 @@ impl<'a> Zmod<'a> {
     }
 
     pub fn read(zmod: &mut Zmod, addr: u8, reg: u8, data: &mut [u8], len: u8) -> i8 {
+        info!("I2C read from Renesas Lib");
         zmod.i2c.write_read(addr, &[reg], data);
         0
     }
 
     pub fn write(zmod: &mut Zmod, addr: u8, reg: u8, data: &mut [u8], len: u8) -> i8 {
+        info!("I2C write from Renesas Lib");
         zmod.i2c.write_read(addr, &[reg], data);
         0
     }
 
     pub fn delay_ms(t: u32) {
+        info!("I2C delay from Renesas Lib");
         let peripherals = Peripherals::take();
         let system = SystemControl::new(peripherals.SYSTEM);
         let clocks = ClockControl::boot_defaults(system.clock_control).freeze();

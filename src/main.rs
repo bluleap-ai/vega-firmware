@@ -23,7 +23,12 @@ use core::mem::MaybeUninit;
 
 extern "C" {
     pub fn init_oaq_2nd_gen(oaq_handle: &mut Oaq2ndGenHandle) -> i8;
-    pub fn calc_oaq_2nd_gen(oaq_handle: &mut Oaq2ndGenHandle, zmod_handle: &mut ZmodDev, algo_input: &Oaq2ndGenInputs, results: &Oaq2ndGenResults) -> i8;
+    pub fn calc_oaq_2nd_gen(
+        oaq_handle: &mut Oaq2ndGenHandle,
+        zmod_handle: &mut ZmodDev,
+        algo_input: &Oaq2ndGenInputs,
+        results: &Oaq2ndGenResults,
+    ) -> i8;
 }
 
 #[global_allocator]
@@ -79,8 +84,8 @@ async fn main(spawner: Spawner) -> ! {
         o3_8h_ppb: 0.0,
     };
 
-    let mut oaq_inputs = Oaq2ndGenInputs{
-        adc_result: [0;18],
+    let mut oaq_inputs = Oaq2ndGenInputs {
+        adc_result: [0; 18],
         humidity_pct: 0.0,
         temperature_degc: 0.0,
     };
@@ -162,7 +167,6 @@ async fn main(spawner: Spawner) -> ! {
 
         let _ = zmod_sensor.calc_rmox(&data, &mut rmox).await;
         info!("ADC:    {:?}", data);
-        info!("RMOX:   {:?}", rmox);
 
         oaq_inputs.adc_result = data;
         oaq_inputs.humidity_pct = 50.0;
@@ -193,8 +197,27 @@ async fn main(spawner: Spawner) -> ! {
                 fast_aqi: 0,
                 epa_aqi: 0,
             };
-            let aqi = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &oaq_inputs, &mut oaq_result);
-            info!("AQI: {}", aqi);
+            let ret = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &oaq_inputs, &mut oaq_result);
+            if ret != 0 && ret != 1 {
+                panic!("ERROR {} during calculateing algorithm, exit", ret);
+            } else {
+                info!("------------ Measurement result ------------");
+                if ret == 0 {
+                    info!("Everything is OK (not stable)");
+                } else {
+                    info!("ZMOD4510 sensor is in stabilization");
+                }
+                info!(" Rmox0 : {:.3}", oaq_result.rmox[0] / 1e3);
+                info!(" Rmox1 : {:.3}", oaq_result.rmox[1] / 1e3);
+                info!(" Rmox2 : {:.3}", oaq_result.rmox[2] / 1e3);
+                info!(" Rmox3 : {:.3}", oaq_result.rmox[3] / 1e3);
+                info!(" Rmox4 : {:.3}", oaq_result.rmox[4] / 1e3);
+                info!(" Rmox5 : {:.3}", oaq_result.rmox[5] / 1e3);
+                info!(" Rmox6 : {:.3}", oaq_result.rmox[6] / 1e3);
+                info!(" O3_conc_ppb = {:.3}", oaq_result.o3_conc_ppb);
+                info!(" Fast AQI = {}", oaq_result.fast_aqi);
+                info!(" EPA AQI = {}", oaq_result.epa_aqi);
+            }
         }
     }
 }
