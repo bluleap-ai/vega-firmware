@@ -11,7 +11,7 @@ use esp_hal::{
 };
 
 mod zmod4510;
-use log::{debug, info};
+use log::{debug, error, info};
 use zmod4510::{
     commands::Command,
     types::{Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev},
@@ -180,6 +180,11 @@ async fn main(_spawner: Spawner) -> ! {
         let _ = zmod_sensor.read_adc(&mut data).await;
         info!("ADC:    {:?}", data);
 
+        // Check validity of the ADC results.
+        if !zmod_sensor.check_error_event().await {
+            error!("Error during reading status register");
+        }
+
         oaq_inputs.adc_result = data;
         oaq_inputs.humidity_pct = 50.0;
         oaq_inputs.temperature_degc = 20.0;
@@ -209,7 +214,7 @@ async fn main(_spawner: Spawner) -> ! {
                 fast_aqi: 0,
                 epa_aqi: 0,
             };
-            let ret = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &oaq_inputs, &mut oaq_result);
+            let ret = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &mut oaq_inputs, &mut oaq_result);
             if ret != 0 && ret != 1 {
                 panic!("ERROR {} during calculateing algorithm, exit", ret);
             } else {

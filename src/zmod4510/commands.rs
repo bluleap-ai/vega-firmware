@@ -11,8 +11,8 @@ pub enum Command {
     // StatusSleepTimerEnabledMask,
     // StatusAlarmMask,
     // StatusLastSeqStepMask,
-    // StatusPorEventMask,
-    // StatusAccessConflictMask,
+    StatusPorEventMask,
+    StatusAccessConflictMask,
 }
 
 impl Command {
@@ -28,8 +28,8 @@ impl Command {
             // Self::StatusSleepTimerEnabledMask => 0x40,
             // Self::StatusAlarmMask => 0x20,
             // Self::StatusLastSeqStepMask => 0x1F,
-            // Self::StatusPorEventMask => 0x80,
-            // Self::StatusAccessConflictMask => 0x40,
+            Self::StatusPorEventMask => 0x80,
+            Self::StatusAccessConflictMask => 0x40,
         }
     }
 }

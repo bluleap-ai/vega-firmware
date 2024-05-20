@@ -271,7 +271,7 @@ impl<'a> Zmod<'a> {
             .i2c_write(
                 Command::ZmodAddrCmd.as_byte(),
                 &mut [self.init_conf.start],
-                self.init_conf.h.len as usize,
+                1,
             )
             .await
         {
@@ -415,6 +415,8 @@ impl<'a> Zmod<'a> {
         let mut hspf: f32;
         let mut count: usize = 0;
 
+        debug!("zmod->config: {:?}", self.config);
+
         while count < zmod_config.h.len as usize {
             hsp_temp[count / 2] =
                 ((zmod_config.h.data[count] as i16) << 8) + zmod_config.h.data[count + 1] as i16;
@@ -428,9 +430,37 @@ impl<'a> Zmod<'a> {
             count += 2;
         }
 
+        debug!("hsp result {:?}", hsp);
+
         Ok(())
     }
 
+    pub async fn check_error_event(&mut self) -> bool {
+        let mut data = [0u8; 1];
+        match self
+            .i2c
+            .write_read(ZMOD_I2C_ADDRESS, &[0xB7], &mut data)
+            .await
+        {
+            Ok(_) => debug!("Send error event OK"),
+            Err(e) => {
+                error!("Failed to send error event: {:?}", e);
+                return false;
+            }
+        }
+
+        if data[0] != 0 {
+            if data[0] & Command::StatusPorEventMask.as_byte() != 0 {
+                error!("ERROR_POR_EVENT");
+                return false;
+            } else if data[0] & Command::StatusAccessConflictMask.as_byte() != 0 {
+                error!("ERROR_ACCESS_CONFLICT");
+                return false;
+            }
+        }
+
+        true
+    }
     // pub async fn calc_rmox(&mut self, adc_result: &[u8], rmox: &mut [f32]) -> Result<(), ()> {
     //     let mut count: usize = 0;
     //     let mut rmox_index: usize = 0;
