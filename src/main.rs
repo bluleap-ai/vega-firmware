@@ -203,9 +203,9 @@ async fn main(spawner: Spawner) -> ! {
             } else {
                 info!("------------ Measurement result ------------");
                 if ret == 0 {
-                    info!("Everything is OK");
+                    info!("ZMOD4510: Valid data");
                 } else {
-                    info!("ZMOD4510 sensor is in stabilization");
+                    info!("ZMOD4510: Warm up");
                 }
                 info!(" Rmox0 : {:.3}", oaq_result.rmox[0] / 1e3);
                 info!(" Rmox1 : {:.3}", oaq_result.rmox[1] / 1e3);
