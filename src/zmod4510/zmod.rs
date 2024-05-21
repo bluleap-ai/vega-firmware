@@ -280,7 +280,7 @@ impl<'a> Zmod<'a> {
                 return Err(e);
             }
         }
-        let mut status: u8 = 0;
+        let mut status: u8 = 0x80;
         while status & commands::Command::StatusSequencerRunningMask.as_byte() != 0 {
             status = match self.read_status().await {
                 Ok(ret) => ret,
@@ -298,6 +298,8 @@ impl<'a> Zmod<'a> {
             Err(e) => return Err(e),
         }
 
+        debug!("Calculate LR ER: {:?}", data_r);
+
         self.mox_lr = ((data_r[0] as u16) << 8) | data_r[1] as u16;
         self.mox_er = ((data_r[2] as u16) << 8) | data_r[3] as u16;
 
@@ -308,12 +310,18 @@ impl<'a> Zmod<'a> {
         let mut send_data = [0x00; 32];
         send_data[0] = addr;
 
-        for i in 1..len+1 {
-            send_data[i] = data[i-1];
+        for i in 1..len + 1 {
+            send_data[i] = data[i - 1];
         }
 
-        debug!("I2C Write: ADDR {} - DATA {:?}", send_data[0], &send_data[1..len+1]);
-        self.i2c.write(ZMOD_I2C_ADDRESS, &send_data[0..len+1]).await
+        debug!(
+            "I2C Write: ADDR {} - DATA {:?}",
+            send_data[0],
+            &send_data[1..len + 1]
+        );
+        self.i2c
+            .write(ZMOD_I2C_ADDRESS, &send_data[0..len + 1])
+            .await
     }
 
     pub async fn init_meas(&mut self) -> Result<(), Error> {
@@ -468,6 +476,9 @@ impl<'a> Zmod<'a> {
     // pub async fn calc_rmox(&mut self, adc_result: &[u8], rmox: &mut [f32]) -> Result<(), ()> {
     //     let mut count: usize = 0;
     //     let mut rmox_index: usize = 0;
+
+    //     info!("MOX_LR: {}", self.mox_lr);
+    //     info!("MOX_ER: {}", self.mox_er);
 
     //     while count < (self.meas_conf.r.len as usize) {
     //         let adc_value = ((adc_result[count] as u16) << 8) | (adc_result[count + 1] as u16);

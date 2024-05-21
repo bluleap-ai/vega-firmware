@@ -19,10 +19,10 @@ use zmod4510::{
 };
 
 extern crate alloc;
-use core::mem::MaybeUninit;
+use core::{borrow::Borrow, mem::MaybeUninit};
 
 extern "C" {
-    pub fn init_oaq_2nd_gen(oaq_handle: &mut Oaq2ndGenHandle) -> i8;
+    pub fn init_oaq_2nd_gen(oaq_handle: *const Oaq2ndGenHandle) -> i8;
     pub fn calc_oaq_2nd_gen(
         oaq_handle: *const Oaq2ndGenHandle,
         zmod_handle: *const ZmodDev,
@@ -80,7 +80,11 @@ async fn main(_spawner: Spawner) -> ! {
 
     esp_println::logger::init_logger(log::LevelFilter::Debug);
 
-    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+
+    io.pins.gpio3.set_high();
+    delay.delay_millis(500);
+    io.pins.gpio3.set_low();
 
     let i2c0 = I2C::new_async(
         peripherals.I2C0,
@@ -90,7 +94,7 @@ async fn main(_spawner: Spawner) -> ! {
         &clocks,
     );
 
-    let mut oaq_handle = Oaq2ndGenHandle {
+    let oaq_handle = Oaq2ndGenHandle {
         sample_cnt: 0,
         smooth_rmox: 0.0,
         gcda: 0.0,
@@ -100,7 +104,7 @@ async fn main(_spawner: Spawner) -> ! {
     };
 
     unsafe {
-        init_oaq_2nd_gen(&mut oaq_handle);
+        init_oaq_2nd_gen(&oaq_handle);
     }
 
     let mut zmod_sensor = Zmod::new(i2c0, delay).await;
@@ -167,9 +171,9 @@ async fn main(_spawner: Spawner) -> ! {
         };
 
         if (Command::StatusSequencerRunningMask.as_byte() & status) != 0 {
-            zmod_sensor.delay.delay_millis(50);
-            continue;
+            panic!("Error during reading status register");
         }
+
         let mut data = [0x00; 18];
         let _ = zmod_sensor.read_adc(&mut data).await;
         info!("ADC:    {:?}", data);
@@ -185,32 +189,32 @@ async fn main(_spawner: Spawner) -> ! {
             temperature_degc: 20.0,
         };
 
-        let prod = zmod_sensor.prod_data;
+        let mut prod = zmod_sensor.prod_data;
         let init_cfg = zmod_sensor.init_conf.clone();
         let meas_cfg = zmod_sensor.meas_conf.clone();
 
-        let mut dev = ZmodDev {
+        let dev = ZmodDev {
             i2c_addr: 0x33,
             config: zmod_sensor.config,
             mox_er: zmod_sensor.mox_er,
             mox_lr: zmod_sensor.mox_lr,
             pid: zmod_sensor.pid,
-            prod_data: prod.as_ptr(),
-            init_config: &init_cfg,
-            meas_config: &meas_cfg,
+            prod_data: prod.as_mut_ptr(),
+            init_config: init_cfg.borrow(),
+            meas_config: meas_cfg.borrow(),
             delay: i2c_delay_ms,
             read: i2c_read,
             write: i2c_write,
         };
 
         unsafe {
-            let mut oaq_result = Oaq2ndGenResults {
+            let oaq_result = Oaq2ndGenResults {
                 rmox: [0.0; 8],
                 o3_conc_ppb: 0.0,
                 fast_aqi: 0,
                 epa_aqi: 0,
             };
-            let ret = calc_oaq_2nd_gen(&mut oaq_handle, &mut dev, &oaq_inputs, &mut oaq_result);
+            let ret = calc_oaq_2nd_gen(&oaq_handle, &dev, &oaq_inputs, &oaq_result);
             if ret != 0 && ret != 1 {
                 panic!("ERROR {} during calculateing algorithm, exit", ret);
             } else {
@@ -227,6 +231,7 @@ async fn main(_spawner: Spawner) -> ! {
                 info!(" Rmox4 : {:.3} kOhm", oaq_result.rmox[4] / 1e3);
                 info!(" Rmox5 : {:.3} kOhm", oaq_result.rmox[5] / 1e3);
                 info!(" Rmox6 : {:.3} kOhm", oaq_result.rmox[6] / 1e3);
+                info!(" Rmox7 : {:.3} kOhm", oaq_result.rmox[7] / 1e3);
                 info!(" O3_conc_ppb = {:.3}", oaq_result.o3_conc_ppb);
                 info!(" Fast AQI = {}", oaq_result.fast_aqi);
                 info!(" EPA AQI = {}", oaq_result.epa_aqi);
