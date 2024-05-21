@@ -11,7 +11,7 @@ use esp_hal::{
 };
 
 mod zmod4510;
-use log::{debug, error, info};
+use log::{debug, info};
 use zmod4510::{
     commands::Command,
     types::{Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev},

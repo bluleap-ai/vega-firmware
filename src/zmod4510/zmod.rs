@@ -310,9 +310,7 @@ impl<'a> Zmod<'a> {
         let mut send_data = [0x00; 32];
         send_data[0] = addr;
 
-        for i in 1..len + 1 {
-            send_data[i] = data[i - 1];
-        }
+        send_data[1..(len + 1)].copy_from_slice(&data[..(len)]);
 
         debug!(
             "I2C Write: ADDR {} - DATA {:?}",

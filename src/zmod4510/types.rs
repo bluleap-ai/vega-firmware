@@ -42,6 +42,7 @@ pub struct ZmodDev {
     pub meas_config: *const ZmodConf,
 }
 
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ZmodConfStr {
     pub addr: u8,
@@ -49,6 +50,7 @@ pub struct ZmodConfStr {
     pub data: [u8; 30],
 }
 
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ZmodConf {
     pub start: u8,
