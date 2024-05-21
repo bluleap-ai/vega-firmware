@@ -171,7 +171,7 @@ async fn main(_spawner: Spawner) -> ! {
         };
 
         if (Command::StatusSequencerRunningMask.as_byte() & status) != 0 {
-            continue;
+            panic!("Error during reading status register");
         }
 
         let mut data = [0x00; 18];
@@ -180,7 +180,7 @@ async fn main(_spawner: Spawner) -> ! {
 
         // Check validity of the ADC results.
         if !zmod_sensor.check_error_event().await {
-            error!("Error during reading status register");
+            panic!("Error during reading status register");
         }
 
         let oaq_inputs = Oaq2ndGenInputs {
