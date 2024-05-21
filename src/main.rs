@@ -171,7 +171,7 @@ async fn main(_spawner: Spawner) -> ! {
         };
 
         if (Command::StatusSequencerRunningMask.as_byte() & status) != 0 {
-            panic!("Error during reading status register");
+            continue;
         }
 
         let mut data = [0x00; 18];
@@ -215,6 +215,7 @@ async fn main(_spawner: Spawner) -> ! {
                 epa_aqi: 0,
             };
             let ret = calc_oaq_2nd_gen(&oaq_handle, &dev, &oaq_inputs, &oaq_result);
+            debug!("OAQ HANDLE: {:?}", oaq_handle);
             if ret != 0 && ret != 1 {
                 panic!("ERROR {} during calculateing algorithm, exit", ret);
             } else {
