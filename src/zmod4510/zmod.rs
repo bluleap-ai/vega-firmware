@@ -1,11 +1,9 @@
-use esp_hal::clock::ClockControl;
 use esp_hal::i2c::Error;
 use esp_hal::i2c::Error::ExecIncomplete;
-use esp_hal::peripherals::{Peripherals, I2C0};
-use esp_hal::system::SystemControl;
+use esp_hal::peripherals::I2C0;
 use esp_hal::Async;
 use esp_hal::{delay::Delay, i2c::I2C};
-use log::{debug, error, info};
+use log::{debug, error};
 
 use super::commands::{self, Command};
 use super::types::*;
@@ -38,37 +36,6 @@ impl<'a> Zmod<'a> {
             init_conf: ZmodConf::default(),
             meas_conf: ZmodConf::default(),
         }
-    }
-
-    // pub async fn destroy(self) -> I2C<'a, I2C0, Async> {
-    //     self.i2c
-    // }
-
-    pub fn read(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
-        info!("I2C read from Renesas Lib");
-        let _ = addr;
-        let _ = reg;
-        let _ = data;
-        let _ = len;
-        0
-    }
-
-    pub fn write(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
-        info!("I2C write from Renesas Lib");
-        let _ = addr;
-        let _ = reg;
-        let _ = data;
-        let _ = len;
-        0
-    }
-
-    pub fn delay_ms(t: u32) {
-        info!("I2C delay from Renesas Lib");
-        let peripherals = Peripherals::take();
-        let system = SystemControl::new(peripherals.SYSTEM);
-        let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
-        let delay = Delay::new(&clocks);
-        delay.delay_millis(t);
     }
 
     pub async fn read_tracking_number(&mut self, track_num: &mut [u8]) -> Result<(), Error> {

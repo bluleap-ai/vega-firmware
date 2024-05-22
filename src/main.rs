@@ -11,7 +11,7 @@ use esp_hal::{
 };
 
 mod zmod4510;
-use log::{debug, info};
+use log::{debug, info, warn};
 use zmod4510::{
     commands::Command,
     types::{Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev},
@@ -31,19 +31,18 @@ extern "C" {
     ) -> i8;
 }
 
-unsafe extern "C" fn i2c_delay_ms(t: u32) {
-    debug!("I2C delay");
-    crate::Zmod::delay_ms(t)
+unsafe extern "C" fn i2c_delay_ms(_t: u32) {
+    warn!("i2c_delay_ms was called from Renesas lib");
 }
 
-unsafe extern "C" fn i2c_write(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
-    debug!("I2C Write");
-    crate::Zmod::write(addr, reg, data, len)
+unsafe extern "C" fn i2c_write(_addr: u8, _reg: u8, _data: *const u8, _len: u8) -> i8 {
+    warn!("i2c_write was called from Renesas lib");
+    0
 }
 
-unsafe extern "C" fn i2c_read(addr: u8, reg: u8, data: *const u8, len: u8) -> i8 {
-    debug!("I2C Read");
-    crate::Zmod::read(addr, reg, data, len)
+unsafe extern "C" fn i2c_read(_addr: u8, _reg: u8, _data: *const u8, _len: u8) -> i8 {
+    warn!("i2c_read was called from Renesas lib");
+    0
 }
 
 #[global_allocator]
