@@ -1,9 +1,7 @@
 [package]
-name = "vega-rs"
-version = "0.1.0"
-authors = ["tuemb <tu.nguyen@ionmobility.com>"]
+name = "as7331-rs"
+version = "1.0.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
 
 [dependencies]
 esp-backtrace = { version = "0.11.0", features = [
@@ -32,25 +30,3 @@ smoltcp = { version = "0.11.0", default-features = false, features = [
     "socket-tcp",
     "socket-udp",
 ] }
-as7331-rs = { path = "src/as7331-rs" }
-
-[profile.dev]
-# Rust debug is too slow. 
-# For debug builds always builds with some optimization
-opt-level = "s"
-
-[profile.release]
-codegen-units = 1 # LLVM can perform better optimizations using a single thread
-debug = 2
-debug-assertions = false
-incremental = false
-lto = 'fat'
-opt-level = 's'
-overflow-checks = false
-
-[[bin]]
-name = "vega"
-path = "src/main.rs"
-test = false
-doctest = false
-bench = false

@@ -77,7 +77,7 @@ async fn main(_spawner: Spawner) -> ! {
     let delay = Delay::new(&clocks);
     init_heap();
 
-    esp_println::logger::init_logger(log::LevelFilter::Debug);
+    esp_println::logger::init_logger(log::LevelFilter::Info);
 
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
