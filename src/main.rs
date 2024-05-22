@@ -10,12 +10,11 @@ use esp_hal::{
     prelude::*, system::SystemControl, timer::timg::TimerGroup,
 };
 
-mod zmod4510;
 use log::{debug, info, warn};
-use zmod4510::{
+use zmod4510_rs::{
     commands::Command,
     types::{Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev},
-    Zmod,
+    zmod::Zmod,
 };
 
 extern crate alloc;
