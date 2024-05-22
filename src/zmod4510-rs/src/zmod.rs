@@ -1,10 +1,10 @@
+use core::result::Result::{self, Err, Ok};
 use esp_hal::i2c::Error;
 use esp_hal::i2c::Error::ExecIncomplete;
 use esp_hal::peripherals::I2C0;
 use esp_hal::Async;
 use esp_hal::{delay::Delay, i2c::I2C};
 use log::{debug, error};
-use core::result::Result::{self, Ok, Err};
 
 use super::commands::{self, Command};
 use super::types::*;

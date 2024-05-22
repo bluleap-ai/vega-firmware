@@ -1,9 +1,9 @@
+use core::result::Result::{self, Err, Ok};
 use esp_hal::i2c::Error;
 use esp_hal::peripherals::I2C0;
 use esp_hal::Async;
 use esp_hal::{delay::Delay, i2c::I2C};
 use log::debug;
-use core::result::Result::{self, Ok, Err};
 
 const AS7331_I2C_ADDRESS: u8 = 0x74;
 
@@ -23,16 +23,13 @@ const AS7331_MRES3: u8 = 0x04;
 
 pub struct As7331<'a> {
     pub i2c: I2C<'a, I2C0, Async>,
-    pub delay: Delay
+    pub delay: Delay,
 }
 
 #[allow(dead_code)]
 impl<'a> As7331<'a> {
     fn new(i2c: I2C<'a, I2C0, Async>, delay: Delay) -> Self {
-        As7331 {
-            i2c,
-            delay
-        }
+        As7331 { i2c, delay }
     }
 
     pub async fn get_chip_id(&mut self) -> Result<u8, Error> {
@@ -41,9 +38,18 @@ impl<'a> As7331<'a> {
         Ok(data[0])
     }
 
-    pub async fn init(&mut self, mmode: u8, cclk: u8, sb: u8, break_time: u8, gain: u8, time: u8) -> Result<(), Error> {
+    pub async fn init(
+        &mut self,
+        mmode: u8,
+        cclk: u8,
+        sb: u8,
+        break_time: u8,
+        gain: u8,
+        time: u8,
+    ) -> Result<(), Error> {
         self.i2c_write_cmd(AS7331_CREG1, gain << 4 | time).await?;
-        self.i2c_write_cmd(AS7331_CREG3, mmode << 6 | sb << 4 | cclk).await?;
+        self.i2c_write_cmd(AS7331_CREG3, mmode << 6 | sb << 4 | cclk)
+            .await?;
         self.i2c_write_cmd(AS7331_BREAK, break_time).await
     }
 
@@ -96,8 +102,11 @@ impl<'a> As7331<'a> {
 
     async fn i2c_write_read_cmd(&mut self, addr: u8, data: &mut [u8]) -> Result<(), Error> {
         match self.i2c.write_read(AS7331_I2C_ADDRESS, &[addr], data).await {
-            Ok(_) => debug!("I2C_WRITE_READ - ADDR: 0x{:02X} - READ: 0x{:02X}", addr, data[0]),
-            Err(e) => return Err(e)
+            Ok(_) => debug!(
+                "I2C_WRITE_READ - ADDR: 0x{:02X} - READ: 0x{:02X}",
+                addr, data[0]
+            ),
+            Err(e) => return Err(e),
         }
         Ok(())
     }
@@ -113,7 +122,7 @@ impl<'a> As7331<'a> {
     async fn i2c_write_cmd(&mut self, addr: u8, cmd: u8) -> Result<(), Error> {
         match self.i2c.write(AS7331_I2C_ADDRESS, &[addr, cmd]).await {
             Ok(_) => debug!("I2C_WRITE - ADDR: 0x{:02X} - DATa: 0x{:02X}", addr, cmd),
-            Err(e) => return Err(e)
+            Err(e) => return Err(e),
         }
         Ok(())
     }
@@ -133,8 +142,7 @@ impl<'a> As7331<'a> {
 
     async fn reset(&mut self) -> Result<(), Error> {
         let mut data = [0u8; 22];
-        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await
-        {
+        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await {
             Err(e) => return Err(e),
             _ => {}
         }
@@ -144,8 +152,7 @@ impl<'a> As7331<'a> {
 
     async fn set_configuration_mode(&mut self) -> Result<(), Error> {
         let mut data = [0u8; 22];
-        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await
-        {
+        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await {
             Err(e) => return Err(e),
             _ => {}
         }
@@ -155,13 +162,11 @@ impl<'a> As7331<'a> {
 
     async fn set_measurement_mode(&mut self) -> Result<(), Error> {
         let mut data = [0u8; 22];
-        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await
-        {
+        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await {
             Err(e) => return Err(e),
             _ => {}
         }
 
         self.i2c_write_cmd(AS7331_OSR, data[0] | 0x83).await
     }
-
 }

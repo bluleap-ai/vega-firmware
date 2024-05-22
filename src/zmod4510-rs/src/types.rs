@@ -1,6 +1,6 @@
+use core::clone::Clone;
 use core::fmt::Debug;
 use core::marker::Copy;
-use core::clone::Clone;
 use core::prelude::v1::derive;
 
 #[repr(C)]
