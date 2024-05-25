@@ -34,6 +34,7 @@ smoltcp = { version = "0.11.0", default-features = false, features = [
 ] }
 as7331-rs = { path = "src/as7331-rs" }
 zmod4510-rs = { path = "src/zmod4510-rs" }
+bme688-rs = { path = "src/bme688-rs" }
 
 [profile.dev]
 # Rust debug is too slow. 

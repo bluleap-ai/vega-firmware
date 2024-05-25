@@ -1,0 +1,8 @@
+[package]
+name = "bme688-rs"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+esp-hal = {git = "https://github.com/esp-rs/esp-hal", branch = "main", features = [ "esp32c6", "embassy-time-timg0", "async", "embassy"] }
+log = { version = "0.4.20" }
