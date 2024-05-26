@@ -63,3 +63,10 @@ path = "src/bme.rs"
 test = false
 doctest = false
 bench = false
+
+[[bin]]
+name = "vega-as7331"
+path = "src/as7331.rs"
+test = false
+doctest = false
+bench = false
