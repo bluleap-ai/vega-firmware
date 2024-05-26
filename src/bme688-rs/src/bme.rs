@@ -5,8 +5,9 @@ use esp_hal::peripherals::I2C0;
 use esp_hal::Async;
 use esp_hal::{delay::Delay, i2c::I2C};
 use log::debug;
+use log::error;
 
-use crate::{CalibrationData, DeviceConfig, GasHeaterConfig, OperationMode};
+use crate::{CalibrationData, DeviceConfig, GasHeaterConfig, OperationMode, SensorData};
 
 const BME_I2C_ADDRESS: u8 = 0x76;
 const BME_SOFT_RST_ADDR: u8 = 0xe0;
@@ -29,7 +30,7 @@ pub struct Bme<'a> {
 
 #[allow(dead_code)]
 impl<'a> Bme<'a> {
-    fn new(i2c: I2C<'a, I2C0, Async>, delay: Delay) -> Self {
+    pub fn new(i2c: I2C<'a, I2C0, Async>, delay: Delay) -> Self {
         Bme {
             i2c,
             delay,
@@ -49,6 +50,245 @@ impl<'a> Bme<'a> {
             1 => Ok(OperationMode::Forced),
             2 => Ok(OperationMode::Parallel),
             _ => Err(ExecIncomplete),
+        }
+    }
+
+    pub fn get_measure_duration(&mut self, op_mode: OperationMode) -> u32 {
+        let mut meas_dur;
+        let mut meas_cycles;
+        let os_to_meas_cycle: [u8; 6] = [0, 1, 2, 4, 8, 16];
+
+        self.boundary_check();
+
+        meas_cycles = os_to_meas_cycle[self.config.os_temp as usize] as u32;
+        meas_cycles += os_to_meas_cycle[self.config.os_pres as usize] as u32;
+        meas_cycles += os_to_meas_cycle[self.config.os_hum as usize] as u32;
+
+        meas_dur = meas_cycles * 1963;
+        meas_dur = (meas_dur + 477) * 4;
+        meas_dur = (meas_dur + 477) * 5;
+
+        if op_mode != OperationMode::Parallel {
+            meas_dur += 1000;
+        }
+
+        meas_dur
+    }
+
+    pub async fn get_data(&mut self, op_mode: OperationMode) -> Result<SensorData, Error> {
+        let mut n_fields = 0u8;
+        let mut data = [SensorData::default(); 3];
+        self.get_raw_data(op_mode, &mut data, &mut n_fields).await?;
+        Ok(data[0])
+    }
+
+    pub async fn get_raw_data(
+        &mut self,
+        op_mode: OperationMode,
+        data: &mut [SensorData],
+        n_data: &mut u8,
+    ) -> Result<(), Error> {
+        match op_mode {
+            OperationMode::Sleep => {
+                error!("Can't get raw data in sleep mode");
+                return Err(ExecIncomplete);
+            }
+            OperationMode::Forced => {
+                self.read_field_data(0, &mut data[0]).await?;
+                *n_data = 1;
+            }
+            OperationMode::Parallel | OperationMode::Sequential => {
+                self.read_all_field_data(data).await?;
+                for i in 0..3 {
+                    *n_data = 0;
+                    if data[i].status & 0x80 != 0 {
+                        *n_data += 1;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn read_field_data(&mut self, index: u8, data: &mut SensorData) -> Result<(), Error> {
+        let read = self.i2c_get_reg(0x1d + 17 * index).await?;
+        data.status = read[0] & 0x80;
+        data.gas_index = read[0] & 0x0f;
+        data.meas_index = read[1];
+        let adc_pres =
+            ((read[2] as u32) * 4096) | ((read[3] as u32) * 16) | ((read[4] as u32) / 16);
+        let adc_temp =
+            ((read[5] as u32) * 4096) | ((read[6] as u32) * 16) | ((read[7] as u32) / 16);
+        let adc_hum = (((read[8] as u32) * 256) | (read[9] as u32)) as u16;
+        let adc_gas_res_low = (((read[13] as u32) * 4) | ((read[14] as u32) / 64)) as u16;
+        let adc_gas_res_high = (((read[15] as u32) * 4) | ((read[16] as u32) / 64)) as u16;
+        let gas_range_l = read[14] & 0x0f;
+        let gas_range_h = read[16] & 0x0f;
+
+        if self.variant_id == 0x01 {
+            data.status |= read[16] & 0x20;
+            data.status |= read[16] & 0x10;
+        } else {
+            data.status |= read[14] & 0x20;
+            data.status |= read[14] & 0x10;
+        }
+
+        if data.status & 0x80 != 0 {
+            let res_heat = self.i2c_get_reg(0x5a + data.gas_index).await?;
+            data.res_heat = res_heat[0];
+            let idac = self.i2c_get_reg(0x50 + data.gas_index).await?;
+            data.idac = idac[0];
+            let gas_wait = self.i2c_get_reg(0x64 + data.gas_index).await?;
+            data.gas_wait = gas_wait[0];
+            data.temperature = self.calc_temperature(adc_temp);
+            data.pressure = self.calc_pressure(adc_pres);
+            data.humidity = self.calc_humidity(adc_hum);
+
+            if self.variant_id == 0x01 {
+                data.gas_resistance = self.calc_gas_resistance_high(adc_gas_res_high, gas_range_h);
+            } else {
+                data.gas_resistance = self.calc_gas_resistance_low(adc_gas_res_low, gas_range_l);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn read_all_field_data(&mut self, data: &mut [SensorData]) -> Result<(), Error> {
+        let buff = self.i2c_get_reg(0x1d).await?;
+        let set_val = self.i2c_get_reg(0x50).await?;
+        let mut i = 0 as usize;
+        while i < 3 {
+            let off = (i * 17) as u8;
+            (data[i]).status = (buff[off as usize] as i32 & 0x80 as i32) as u8;
+            (data[i]).gas_index = (buff[off as usize] as i32 & 0xf as i32) as u8;
+            (data[i]).meas_index = buff[(off as i32 + 1 as i32) as usize];
+            let adc_pres = (buff[(off as i32 + 2 as i32) as usize] as u32)
+                .wrapping_mul(4096 as i32 as u32)
+                | (buff[(off as i32 + 3 as i32) as usize] as u32).wrapping_mul(16 as i32 as u32)
+                | (buff[(off as i32 + 4 as i32) as usize] as u32).wrapping_div(16 as i32 as u32);
+            let adc_temp = (buff[(off as i32 + 5 as i32) as usize] as u32)
+                .wrapping_mul(4096 as i32 as u32)
+                | (buff[(off as i32 + 6 as i32) as usize] as u32).wrapping_mul(16 as i32 as u32)
+                | (buff[(off as i32 + 7 as i32) as usize] as u32).wrapping_div(16 as i32 as u32);
+            let adc_hum = ((buff[(off as i32 + 8 as i32) as usize] as u32)
+                .wrapping_mul(256 as i32 as u32)
+                | buff[(off as i32 + 9 as i32) as usize] as u32) as u16;
+            let adc_gas_res_low = ((buff[(off as i32 + 13 as i32) as usize] as u32)
+                .wrapping_mul(4 as i32 as u32)
+                | (buff[(off as i32 + 14 as i32) as usize] as u32).wrapping_div(64 as i32 as u32))
+                as u16;
+            let adc_gas_res_high = ((buff[(off as i32 + 15 as i32) as usize] as u32)
+                .wrapping_mul(4 as i32 as u32)
+                | (buff[(off as i32 + 16 as i32) as usize] as u32).wrapping_div(64 as i32 as u32))
+                as u16;
+            let gas_range_l = (buff[(off as i32 + 14 as i32) as usize] as i32 & 0xf as i32) as u8;
+            let gas_range_h = (buff[(off as i32 + 16 as i32) as usize] as i32 & 0xf as i32) as u8;
+            if self.variant_id == 0x01 {
+                data[i].status |= buff[off as usize + 16] & 0x20;
+                data[i].status |= buff[off as usize + 16] & 0x10;
+            } else {
+                data[i].status |= buff[off as usize + 14] & 0x20;
+                data[i].status |= buff[off as usize + 14] & 0x10;
+            }
+
+            data[i].idac = set_val[data[i].gas_index as usize];
+            data[i].res_heat = set_val[10 + data[i].gas_index as usize];
+            data[i].gas_wait = set_val[20 + data[i].gas_index as usize];
+            data[i].temperature = self.calc_temperature(adc_temp);
+            data[i].pressure = self.calc_pressure(adc_pres);
+            data[i].humidity = self.calc_humidity(adc_hum);
+            if self.variant_id == 0x01 {
+                data[i].gas_resistance =
+                    self.calc_gas_resistance_high(adc_gas_res_high, gas_range_h);
+            } else {
+                data[i].gas_resistance =
+                    self.calc_gas_resistance_high(adc_gas_res_low, gas_range_l);
+            }
+            i = i.wrapping_add(1);
+        }
+        Ok(())
+    }
+
+    fn calc_gas_resistance_high(&mut self, gas_res_adc: u16, gas_range: u8) -> f32 {
+        let var1 = (262144 >> gas_range) as u32;
+        let mut var2: i32 = gas_res_adc as i32 - 512;
+        var2 *= 3;
+        var2 = 4096 + var2;
+        1000000.0 * var1 as f32 / var2 as f32
+    }
+
+    fn calc_gas_resistance_low(&mut self, gas_res_adc: u16, gas_range: u8) -> f32 {
+        let gas_res_f: f32 = gas_res_adc as f32;
+        let gas_range_f: f32 = ((1 as u32) << gas_range as i32) as f32;
+        let lookup_k1_range: [f32; 16] = [
+            0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, -1.0f32, 0.0f32, -0.8f32, 0.0f32, 0.0f32,
+            -0.2f32, -0.5f32, 0.0f32, -1.0f32, 0.0f32, 0.0f32,
+        ];
+        let lookup_k2_range: [f32; 16] = [
+            0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.1f32, 0.7f32, 0.0f32, -0.8f32, -0.1f32, 0.0f32,
+            0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32,
+        ];
+        let var1 = 1340.0f32 + 5.0f32 * self.calib.range_sw_err as i32 as f32;
+        let var2 = var1 * (1.0f32 + lookup_k1_range[gas_range as usize] / 100.0f32);
+        let var3 = 1.0f32 + lookup_k2_range[gas_range as usize] / 100.0f32;
+        1.0f32 / (var3 * 0.000000125f32 * gas_range_f * ((gas_res_f - 512.0f32) / var2 + 1.0f32))
+    }
+
+    fn calc_temperature(&mut self, temp_adc: u32) -> f32 {
+        let var1 = ((temp_adc as f32 / 16384.0) - (self.calib.par_t1 as f32 / 1024.0))
+            * (self.calib.par_t2 as f32);
+        let var2 = ((temp_adc as f32 / 131072.0) - (self.calib.par_t1 as f32 / 8192.0))
+            * ((temp_adc as f32 / 131072.0) - (self.calib.par_t1 as f32 / 8192.0))
+            * (self.calib.par_t3 as f32 * 16.0);
+        self.calib.t_fine = var1 + var2;
+        self.calib.t_fine / 5120.0
+    }
+
+    fn calc_pressure(&mut self, pres_adc: u32) -> f32 {
+        let mut var1 = self.calib.t_fine / 2.0 - 64000.0;
+        let mut var2 = var1 * var1 * (self.calib.par_p6 as f32 / 131072.0);
+        var2 = var2 + var1 * (self.calib.par_p5 as f32 * 2.0);
+        var2 = var2 / 4.0 + (self.calib.par_p4 as f32 * 65536.0);
+        var1 = ((self.calib.par_p3 as f32) * var1 * var1 / 16384.0
+            + self.calib.par_p2 as f32 * var1)
+            / 524288.0;
+        var1 = (1.0 + var1 / 32768.0) * self.calib.par_p1 as f32;
+        let mut calc_pres = 1048576.0 - pres_adc as f32;
+
+        if var1 != 0.0 {
+            calc_pres = (calc_pres - var2 / 4096.0) * 6250.0 / var1;
+            var1 = self.calib.par_p9 as f32 * calc_pres * calc_pres / 2147483648.0;
+            var2 = calc_pres * (self.calib.par_p8 as f32 / 32768.0);
+            let var3 = (calc_pres / 256.0)
+                * (calc_pres / 256.0)
+                * (calc_pres / 256.0)
+                * (self.calib.par_p10 as f32 / 131072.0);
+            calc_pres + (var1 + var2 + var3 + self.calib.par_p7 as f32 / 128.0) / 16.0
+        } else {
+            0.0
+        }
+    }
+
+    fn calc_humidity(&mut self, hum_adc: u16) -> f32 {
+        let temp_comp = self.calib.t_fine / 5120.0;
+        let var1 = (hum_adc as f32)
+            - ((self.calib.par_h1 as f32 * 16.0) + (self.calib.par_p3 as f32 / 2.0 * temp_comp));
+        let var2 = var1
+            * ((self.calib.par_h2 as f32 / 262144.0)
+                * (1.0
+                    + (self.calib.par_h4 as f32 / 16384.0 * temp_comp)
+                    + (self.calib.par_h5 as f32 / 1048576.0 * temp_comp * temp_comp)));
+        let var3 = self.calib.par_h6 as f32 / 16384.0;
+        let var4 = self.calib.par_h7 as f32 / 2097152.0;
+
+        let calc_hum = var2 + (var3 + var4 * temp_comp) * var2 * var2;
+        if calc_hum > 100.0 {
+            100.0
+        } else if calc_hum < 0.0 {
+            0.0
+        } else {
+            calc_hum
         }
     }
 

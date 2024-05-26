@@ -32,6 +32,20 @@ pub struct CalibrationData {
     pub range_sw_err: i8,
 }
 
+#[derive(Copy, Clone, Default)]
+pub struct SensorData {
+    pub status: u8,
+    pub gas_index: u8,
+    pub meas_index: u8,
+    pub res_heat: u8,
+    pub idac: u8,
+    pub gas_wait: u8,
+    pub temperature: f32,
+    pub pressure: f32,
+    pub humidity: f32,
+    pub gas_resistance: f32,
+}
+
 /// Operation mode of the sensor.
 #[derive(PartialEq)]
 pub enum OperationMode {
@@ -54,6 +68,29 @@ pub struct GasHeaterConfig {
     pub(crate) heatr_dur_prof: *mut u16,
     pub(crate) profile_len: u8,
     pub(crate) shared_heatr_dur: u16,
+}
+
+impl GasHeaterConfig {
+    pub fn enable(self) -> Self {
+        let mut conf = self;
+        conf.enable = true as u8;
+        conf
+    }
+    pub fn heater_temp(self, temp: u16) -> Self {
+        let mut conf = self;
+        conf.heatr_temp = temp;
+        conf
+    }
+    pub fn heater_duration(self, duration: u16) -> Self {
+        let mut conf = self;
+        conf.heatr_dur = duration;
+        conf
+    }
+    pub fn disable(self) -> Self {
+        let mut conf = self;
+        conf.enable = false as u8;
+        conf
+    }
 }
 
 impl Default for GasHeaterConfig {
