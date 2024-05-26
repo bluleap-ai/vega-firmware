@@ -92,7 +92,7 @@ async fn main(_spawner: Spawner) -> ! {
         let _ = bme_sensor.set_op_mode(OperationMode::Forced).await;
         let del_period = bme_sensor
             .get_measure_duration(OperationMode::Forced)
-            .wrapping_add(300 as u32 * 1000);
+            .wrapping_add(300_u32 * 1000);
         bme_sensor.delay.delay_micros(del_period);
 
         // Get the sensor data
