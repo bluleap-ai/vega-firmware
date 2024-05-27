@@ -16,6 +16,14 @@ cargo run --bin vega-as7331
 <temperature(1byte)> <humidity(1byte)> <pressure(1byte)> <gas resistance (4 bytes)> <UV_A (4 bytes)> <UV_B (4 bytes)> <UV_C (4 bytes)> <O3 (2 bytes)> <Fast AQI (2 bytes)>
 ```
 **Total: 23 bytes**
+- temperature 0-100 (celsius)
+- humidity 0-100 (%)
+- gas resistance: float (f32) (kOhm)
+- UV_A: float (f32) (uW/cm^2)
+- UV_B: float (f32) (uW/cm^2)
+- UV_C: float (f32) (uW/cm^2)
+- O3: 0-2000 (ppb)
+- fast AQI: 0-500
 ## License
 
 Licensed under either of:
