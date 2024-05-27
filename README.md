@@ -11,7 +11,11 @@ cargo run --bin vega-bme
 ```
 cargo run --bin vega-as7331
 ```
-
+## Advertising format:
+```
+<temperature(1byte)> <humidity(1byte)> <pressure(1byte)> <gas resistance (4 bytes)> <UV_A (4 bytes)> <UV_B (4 bytes)> <UV_C (4 bytes)> <O3 (2 bytes)> <Fast AQI (2 bytes)>
+```
+**Total: 23 bytes**
 ## License
 
 Licensed under either of:
