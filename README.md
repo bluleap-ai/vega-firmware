@@ -1,6 +1,6 @@
 # VEGA PROJECT - AIR QUALITY
 
-## Run example for ZMOD4510, BME688, AS7331 sensors:
+## Run example for ZMOD4510, BME688, AS7331 sensors and BLE advertising:
 
 ```
 cargo run --bin vega-zmod
@@ -10,6 +10,9 @@ cargo run --bin vega-bme
 ```
 ```
 cargo run --bin vega-as7331
+```
+```
+cargo run --bin ble
 ```
 ## Advertising format:
 ```

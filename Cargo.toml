@@ -12,7 +12,7 @@ esp-backtrace = { version = "0.11.0", features = [
     "panic-handler",
     "println",
 ] }
-esp-hal = {git = "https://github.com/esp-rs/esp-hal", branch = "main", features = [ "esp32c6", "embassy-time-timg0", "async", "embassy"] }
+esp-hal = {git = "https://github.com/esp-rs/esp-hal", branch = "main", features = ["esp32c6", "embassy-time-timg0", "async", "embassy"] }
 embassy-executor    = { version = "0.5.0", features = ["nightly", "integrated-timers"] }
 esp-println = { version = "0.9.0", features = ["esp32c6", "log"] }
 log = { version = "0.4.20" }
@@ -32,6 +32,8 @@ smoltcp = { version = "0.11.0", default-features = false, features = [
     "socket-tcp",
     "socket-udp",
 ] }
+esp-wifi = {git = "https://github.com/TuEmb/esp-hal", branch = "ble_advertising", features = ["async", "esp32c6", "ble", "esp-now"]}
+bleps    = { git = "https://github.com/bjoernQ/bleps", package = "bleps", rev = "a5148d8ae679e021b78f53fd33afb8bb35d0b62e", features = [ "macros", "async"] }
 as7331-rs = { path = "src/as7331-rs" }
 zmod4510-rs = { path = "src/zmod4510-rs" }
 bme688-rs = { path = "src/bme688-rs" }
@@ -67,6 +69,13 @@ bench = false
 [[bin]]
 name = "vega-as7331"
 path = "src/as7331.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "ble"
+path = "src/ble.rs"
 test = false
 doctest = false
 bench = false
