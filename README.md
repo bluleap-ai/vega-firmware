@@ -34,6 +34,7 @@ cargo run --bin vega --features "all"
 - UV_C: float (f32) (uW/cm^2)
 - O3: 0-2000 (ppb)
 - fast AQI: 0-500
+- **note:** the data follow ```Little endian``` format.
 ## License
 
 Licensed under either of:
