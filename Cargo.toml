@@ -42,6 +42,7 @@ bme688-rs = { path = "src/bme688-rs" }
 bme688 = []
 as7331 = []
 zmod = []
+all = ["bme688", "as7331", "zmod"]
 
 
 [profile.dev]
@@ -60,7 +61,7 @@ overflow-checks = false
 
 [[bin]]
 name = "vega-zmod"
-path = "src/main.rs"
+path = "src/zmod.rs"
 test = false
 doctest = false
 bench = false
@@ -88,7 +89,7 @@ bench = false
 
 [[bin]]
 name = "vega"
-path = "src/vega.rs"
+path = "src/main.rs"
 test = false
 doctest = false
 bench = false
