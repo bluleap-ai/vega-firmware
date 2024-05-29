@@ -30,16 +30,16 @@ use bleps::{
     att::Uuid,
 };
 use esp_wifi::{ble::controller::asynch::BleConnector, initialize, EspWifiInitFor};
-use log::info;
-#[cfg(feature = "zmod")]
-use log::{warn, debug};
 #[cfg(feature = "as7331")]
 use log::error;
+use log::info;
+#[cfg(feature = "zmod")]
+use log::{debug, warn};
 
 extern crate alloc;
-use core::mem::MaybeUninit;
 #[cfg(feature = "zmod")]
 use core::borrow::Borrow;
+use core::mem::MaybeUninit;
 
 #[cfg(feature = "zmod")]
 extern "C" {
@@ -391,7 +391,7 @@ async fn main(_spawner: Spawner) -> ! {
                 let uv_a = all_data[1];
                 let uv_b = all_data[2];
                 let uv_c = all_data[3];
-    
+
                 info!("AS7331 UV DATA:");
                 info!("AS7331 UVA: {:.2} (uW/cm^2)", uv_a as f32 * lsb_a);
                 info!("AS7331 UVB: {:.2} (uW/cm^2)", uv_b as f32 * lsb_b);
