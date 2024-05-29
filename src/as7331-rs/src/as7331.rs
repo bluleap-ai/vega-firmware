@@ -32,6 +32,10 @@ impl<'a> As7331<'a> {
         As7331 { i2c, delay }
     }
 
+    pub fn destroy(self) -> I2C<'a, I2C0, Async> {
+        self.i2c
+    }
+
     pub async fn get_chip_id(&mut self) -> Result<u8, Error> {
         let mut data = [0u8; 1];
         self.i2c_write_read_cmd(AS7331_AGEN, &mut data).await?;

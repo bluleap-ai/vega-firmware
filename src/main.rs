@@ -12,9 +12,7 @@ use esp_hal::{
 
 use log::{debug, info, warn};
 use zmod4510_rs::{
-    commands::Command,
-    types::{Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev},
-    zmod::Zmod,
+    commands::Command, zmod::Zmod, Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodDev,
 };
 
 extern crate alloc;
@@ -131,7 +129,10 @@ async fn main(_spawner: Spawner) -> ! {
         tracking_num[4],
         tracking_num[5]
     );
-    info!("Sensor trimming data: {:?}", zmod_sensor.prod_data);
+    info!(
+        "Sensor trimming data: {:?}",
+        zmod_sensor.zmod_data.prod_data
+    );
 
     match zmod_sensor.init().await {
         Ok(_) => {
@@ -187,16 +188,16 @@ async fn main(_spawner: Spawner) -> ! {
             temperature_degc: 20.0,
         };
 
-        let mut prod = zmod_sensor.prod_data;
-        let init_cfg = zmod_sensor.init_conf.clone();
-        let meas_cfg = zmod_sensor.meas_conf.clone();
+        let mut prod = zmod_sensor.zmod_data.prod_data;
+        let init_cfg = zmod_sensor.zmod_data.init_conf.clone();
+        let meas_cfg = zmod_sensor.zmod_data.meas_conf.clone();
 
         let dev = ZmodDev {
             i2c_addr: 0x33,
-            config: zmod_sensor.config,
-            mox_er: zmod_sensor.mox_er,
-            mox_lr: zmod_sensor.mox_lr,
-            pid: zmod_sensor.pid,
+            config: zmod_sensor.zmod_data.config,
+            mox_er: zmod_sensor.zmod_data.mox_er,
+            mox_lr: zmod_sensor.zmod_data.mox_lr,
+            pid: zmod_sensor.zmod_data.pid,
             prod_data: prod.as_mut_ptr(),
             init_config: init_cfg.borrow(),
             meas_config: meas_cfg.borrow(),

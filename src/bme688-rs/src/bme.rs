@@ -7,7 +7,7 @@ use esp_hal::{delay::Delay, i2c::I2C};
 use log::debug;
 use log::error;
 
-use crate::{CalibrationData, DeviceConfig, GasHeaterConfig, OperationMode, SensorData};
+use crate::{BmeData, DeviceConfig, GasHeaterConfig, OperationMode, SensorData};
 
 const BME_I2C_ADDRESS: u8 = 0x76;
 const BME_SOFT_RST_ADDR: u8 = 0xe0;
@@ -20,12 +20,7 @@ const BME_REG_COEFF3: u8 = 0x00;
 pub struct Bme<'a> {
     pub i2c: I2C<'a, I2C0, Async>,
     pub delay: Delay,
-    pub variant_id: u8,
-    pub amb_temp: i8,
-    pub calib: CalibrationData,
-    pub config: DeviceConfig,
-    pub gas_heater_config: GasHeaterConfig,
-    pub info_msg: u8,
+    pub bme_data: BmeData,
 }
 
 #[allow(dead_code)]
@@ -34,13 +29,20 @@ impl<'a> Bme<'a> {
         Bme {
             i2c,
             delay,
-            variant_id: 0,
-            amb_temp: 0,
-            calib: CalibrationData::default(),
-            config: DeviceConfig::default(),
-            info_msg: 0,
-            gas_heater_config: GasHeaterConfig::default(),
+            bme_data: BmeData::default(),
         }
+    }
+
+    pub fn new_with_data(i2c: I2C<'a, I2C0, Async>, delay: Delay, bme_data: BmeData) -> Self {
+        Bme {
+            i2c,
+            delay,
+            bme_data,
+        }
+    }
+
+    pub fn destroy(self) -> (I2C<'a, I2C0, Async>, BmeData) {
+        (self.i2c, self.bme_data)
     }
 
     pub async fn get_op_mode(&mut self) -> Result<OperationMode, Error> {
@@ -60,9 +62,9 @@ impl<'a> Bme<'a> {
 
         self.boundary_check();
 
-        meas_cycles = os_to_meas_cycle[self.config.os_temp as usize] as u32;
-        meas_cycles += os_to_meas_cycle[self.config.os_pres as usize] as u32;
-        meas_cycles += os_to_meas_cycle[self.config.os_hum as usize] as u32;
+        meas_cycles = os_to_meas_cycle[self.bme_data.config.os_temp as usize] as u32;
+        meas_cycles += os_to_meas_cycle[self.bme_data.config.os_pres as usize] as u32;
+        meas_cycles += os_to_meas_cycle[self.bme_data.config.os_hum as usize] as u32;
 
         meas_dur = meas_cycles * 1963;
         meas_dur = (meas_dur + 477) * 4;
@@ -125,7 +127,7 @@ impl<'a> Bme<'a> {
         let gas_range_l = read[14] & 0x0f;
         let gas_range_h = read[16] & 0x0f;
 
-        if self.variant_id == 0x01 {
+        if self.bme_data.variant_id == 0x01 {
             data.status |= read[16] & 0x20;
             data.status |= read[16] & 0x10;
         } else {
@@ -144,7 +146,7 @@ impl<'a> Bme<'a> {
             data.pressure = self.calc_pressure(adc_pres);
             data.humidity = self.calc_humidity(adc_hum);
 
-            if self.variant_id == 0x01 {
+            if self.bme_data.variant_id == 0x01 {
                 data.gas_resistance = self.calc_gas_resistance_high(adc_gas_res_high, gas_range_h);
             } else {
                 data.gas_resistance = self.calc_gas_resistance_low(adc_gas_res_low, gas_range_l);
@@ -184,7 +186,7 @@ impl<'a> Bme<'a> {
                 as u16;
             let gas_range_l = (buff[(off as i32 + 14 as i32) as usize] as i32 & 0xf as i32) as u8;
             let gas_range_h = (buff[(off as i32 + 16 as i32) as usize] as i32 & 0xf as i32) as u8;
-            if self.variant_id == 0x01 {
+            if self.bme_data.variant_id == 0x01 {
                 data[i].status |= buff[off as usize + 16] & 0x20;
                 data[i].status |= buff[off as usize + 16] & 0x10;
             } else {
@@ -198,7 +200,7 @@ impl<'a> Bme<'a> {
             data[i].temperature = self.calc_temperature(adc_temp);
             data[i].pressure = self.calc_pressure(adc_pres);
             data[i].humidity = self.calc_humidity(adc_hum);
-            if self.variant_id == 0x01 {
+            if self.bme_data.variant_id == 0x01 {
                 data[i].gas_resistance =
                     self.calc_gas_resistance_high(adc_gas_res_high, gas_range_h);
             } else {
@@ -229,58 +231,59 @@ impl<'a> Bme<'a> {
             0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.1f32, 0.7f32, 0.0f32, -0.8f32, -0.1f32, 0.0f32,
             0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32,
         ];
-        let var1 = 1340.0f32 + 5.0f32 * self.calib.range_sw_err as i32 as f32;
+        let var1 = 1340.0f32 + 5.0f32 * self.bme_data.calib.range_sw_err as i32 as f32;
         let var2 = var1 * (1.0f32 + lookup_k1_range[gas_range as usize] / 100.0f32);
         let var3 = 1.0f32 + lookup_k2_range[gas_range as usize] / 100.0f32;
         1.0f32 / (var3 * 0.000000125f32 * gas_range_f * ((gas_res_f - 512.0f32) / var2 + 1.0f32))
     }
 
     fn calc_temperature(&mut self, temp_adc: u32) -> f32 {
-        let var1 = ((temp_adc as f32 / 16384.0) - (self.calib.par_t1 as f32 / 1024.0))
-            * (self.calib.par_t2 as f32);
-        let var2 = ((temp_adc as f32 / 131072.0) - (self.calib.par_t1 as f32 / 8192.0))
-            * ((temp_adc as f32 / 131072.0) - (self.calib.par_t1 as f32 / 8192.0))
-            * (self.calib.par_t3 as f32 * 16.0);
-        self.calib.t_fine = var1 + var2;
-        self.calib.t_fine / 5120.0
+        let var1 = ((temp_adc as f32 / 16384.0) - (self.bme_data.calib.par_t1 as f32 / 1024.0))
+            * (self.bme_data.calib.par_t2 as f32);
+        let var2 = ((temp_adc as f32 / 131072.0) - (self.bme_data.calib.par_t1 as f32 / 8192.0))
+            * ((temp_adc as f32 / 131072.0) - (self.bme_data.calib.par_t1 as f32 / 8192.0))
+            * (self.bme_data.calib.par_t3 as f32 * 16.0);
+        self.bme_data.calib.t_fine = var1 + var2;
+        self.bme_data.calib.t_fine / 5120.0
     }
 
     fn calc_pressure(&mut self, pres_adc: u32) -> f32 {
-        let mut var1 = self.calib.t_fine / 2.0 - 64000.0;
-        let mut var2 = var1 * var1 * (self.calib.par_p6 as f32 / 131072.0);
-        var2 = var2 + var1 * (self.calib.par_p5 as f32 * 2.0);
-        var2 = var2 / 4.0 + (self.calib.par_p4 as f32 * 65536.0);
-        var1 = ((self.calib.par_p3 as f32) * var1 * var1 / 16384.0
-            + self.calib.par_p2 as f32 * var1)
+        let mut var1 = self.bme_data.calib.t_fine / 2.0 - 64000.0;
+        let mut var2 = var1 * var1 * (self.bme_data.calib.par_p6 as f32 / 131072.0);
+        var2 = var2 + var1 * (self.bme_data.calib.par_p5 as f32 * 2.0);
+        var2 = var2 / 4.0 + (self.bme_data.calib.par_p4 as f32 * 65536.0);
+        var1 = ((self.bme_data.calib.par_p3 as f32) * var1 * var1 / 16384.0
+            + self.bme_data.calib.par_p2 as f32 * var1)
             / 524288.0;
-        var1 = (1.0 + var1 / 32768.0) * self.calib.par_p1 as f32;
+        var1 = (1.0 + var1 / 32768.0) * self.bme_data.calib.par_p1 as f32;
         let mut calc_pres = 1048576.0 - pres_adc as f32;
 
         if var1 != 0.0 {
             calc_pres = (calc_pres - var2 / 4096.0) * 6250.0 / var1;
-            var1 = self.calib.par_p9 as f32 * calc_pres * calc_pres / 2147483648.0;
-            var2 = calc_pres * (self.calib.par_p8 as f32 / 32768.0);
+            var1 = self.bme_data.calib.par_p9 as f32 * calc_pres * calc_pres / 2147483648.0;
+            var2 = calc_pres * (self.bme_data.calib.par_p8 as f32 / 32768.0);
             let var3 = (calc_pres / 256.0)
                 * (calc_pres / 256.0)
                 * (calc_pres / 256.0)
-                * (self.calib.par_p10 as f32 / 131072.0);
-            calc_pres + (var1 + var2 + var3 + self.calib.par_p7 as f32 / 128.0) / 16.0
+                * (self.bme_data.calib.par_p10 as f32 / 131072.0);
+            calc_pres + (var1 + var2 + var3 + self.bme_data.calib.par_p7 as f32 / 128.0) / 16.0
         } else {
             0.0
         }
     }
 
     fn calc_humidity(&mut self, hum_adc: u16) -> f32 {
-        let temp_comp = self.calib.t_fine / 5120.0;
+        let temp_comp = self.bme_data.calib.t_fine / 5120.0;
         let var1 = (hum_adc as f32)
-            - ((self.calib.par_h1 as f32 * 16.0) + (self.calib.par_p3 as f32 / 2.0 * temp_comp));
+            - ((self.bme_data.calib.par_h1 as f32 * 16.0)
+                + (self.bme_data.calib.par_p3 as f32 / 2.0 * temp_comp));
         let var2 = var1
-            * ((self.calib.par_h2 as f32 / 262144.0)
+            * ((self.bme_data.calib.par_h2 as f32 / 262144.0)
                 * (1.0
-                    + (self.calib.par_h4 as f32 / 16384.0 * temp_comp)
-                    + (self.calib.par_h5 as f32 / 1048576.0 * temp_comp * temp_comp)));
-        let var3 = self.calib.par_h6 as f32 / 16384.0;
-        let var4 = self.calib.par_h7 as f32 / 2097152.0;
+                    + (self.bme_data.calib.par_h4 as f32 / 16384.0 * temp_comp)
+                    + (self.bme_data.calib.par_h5 as f32 / 1048576.0 * temp_comp * temp_comp)));
+        let var3 = self.bme_data.calib.par_h6 as f32 / 16384.0;
+        let var4 = self.bme_data.calib.par_h7 as f32 / 2097152.0;
 
         let calc_hum = var2 + (var3 + var4 * temp_comp) * var2 * var2;
         if calc_hum > 100.0 {
@@ -315,48 +318,48 @@ impl<'a> Bme<'a> {
     }
 
     pub fn boundary_check(&mut self) {
-        if self.config.filter > 7 {
-            self.config.filter = 7;
-            self.info_msg |= 0x01;
+        if self.bme_data.config.filter > 7 {
+            self.bme_data.config.filter = 7;
+            self.bme_data.info_msg |= 0x01;
         }
 
-        if self.config.os_temp > 5 {
-            self.config.os_temp = 5;
-            self.info_msg |= 0x01;
+        if self.bme_data.config.os_temp > 5 {
+            self.bme_data.config.os_temp = 5;
+            self.bme_data.info_msg |= 0x01;
         }
 
-        if self.config.os_pres > 5 {
-            self.config.os_pres = 5;
-            self.info_msg |= 0x01;
+        if self.bme_data.config.os_pres > 5 {
+            self.bme_data.config.os_pres = 5;
+            self.bme_data.info_msg |= 0x01;
         }
 
-        if self.config.os_hum > 5 {
-            self.config.os_hum = 5;
-            self.info_msg |= 0x01;
+        if self.bme_data.config.os_hum > 5 {
+            self.bme_data.config.os_hum = 5;
+            self.bme_data.info_msg |= 0x01;
         }
 
-        if self.config.odr > 8 {
-            self.config.odr = 8;
-            self.info_msg |= 0x01;
+        if self.bme_data.config.odr > 8 {
+            self.bme_data.config.odr = 8;
+            self.bme_data.info_msg |= 0x01;
         }
     }
 
     pub async fn set_config(&mut self, conf: DeviceConfig) -> Result<(), Error> {
         let mut odr20: u8 = 0;
         let mut odr3: u8 = 1;
-        self.config = conf;
+        self.bme_data.config = conf;
         let cur_op_mode = self.get_op_mode().await?;
         self.set_op_mode(OperationMode::Sleep).await?;
         let mut data = self.i2c_get_reg(0x71).await?;
         self.boundary_check();
 
-        data[4] = (data[4] & !0x1C) | ((self.config.filter << 2) & 0x1C);
-        data[3] = (data[3] & !0xE0) | ((self.config.os_temp << 5) & 0xE0);
-        data[2] = (data[2] & !0x1C) | ((self.config.os_pres << 2) & 0x1C);
-        data[1] = (data[1] & !0x07) | ((self.config.os_hum << 2) & 0x07);
+        data[4] = (data[4] & !0x1C) | ((self.bme_data.config.filter << 2) & 0x1C);
+        data[3] = (data[3] & !0xE0) | ((self.bme_data.config.os_temp << 5) & 0xE0);
+        data[2] = (data[2] & !0x1C) | ((self.bme_data.config.os_pres << 2) & 0x1C);
+        data[1] = (data[1] & !0x07) | ((self.bme_data.config.os_hum << 2) & 0x07);
 
-        if self.config.odr != 8 {
-            odr20 = self.config.odr;
+        if self.bme_data.config.odr != 8 {
+            odr20 = self.bme_data.config.odr;
             odr3 = 0;
         }
 
@@ -388,49 +391,49 @@ impl<'a> Bme<'a> {
         let run_gas: u8;
         let mut nb_conv = 0u8;
         let mut write_len = 0u8;
-        self.gas_heater_config = conf;
+        self.bme_data.gas_heater_config = conf;
         self.set_op_mode(OperationMode::Sleep).await?;
         match op_mode {
             OperationMode::Forced => {
                 rh_reg_addr[0] = 0x5a;
-                rh_reg_data[0] = self.calc_res_heat(self.gas_heater_config.heatr_temp);
+                rh_reg_data[0] = self.calc_res_heat(self.bme_data.gas_heater_config.heatr_temp);
                 gw_reg_addr[0] = 0x64;
-                gw_reg_data[0] = self.calc_gas_wait(self.gas_heater_config.heatr_dur);
+                gw_reg_data[0] = self.calc_gas_wait(self.bme_data.gas_heater_config.heatr_dur);
                 nb_conv = 0;
                 write_len = 1;
             }
             OperationMode::Parallel => {
-                if self.gas_heater_config.shared_heatr_dur == 0 {
+                if self.bme_data.gas_heater_config.shared_heatr_dur == 0 {
                     return Err(ExecIncomplete);
                 }
 
                 let mut count = 0 as usize;
-                while count < self.gas_heater_config.profile_len as usize {
+                while count < self.bme_data.gas_heater_config.profile_len as usize {
                     rh_reg_addr[count] = 0x5a + count as u8;
                     rh_reg_data[count] = self.calc_res_heat(unsafe {
-                        *self.gas_heater_config.heatr_temp_prof.add(count)
+                        *self.bme_data.gas_heater_config.heatr_temp_prof.add(count)
                     });
                     gw_reg_addr[count] = 0x64 + count as u8;
                     gw_reg_data[count] =
-                        unsafe { *self.gas_heater_config.heatr_dur_prof.add(count) as u8 };
+                        unsafe { *self.bme_data.gas_heater_config.heatr_dur_prof.add(count) as u8 };
                     count += 1;
                 }
-                nb_conv = self.gas_heater_config.profile_len;
-                write_len = self.gas_heater_config.profile_len;
+                nb_conv = self.bme_data.gas_heater_config.profile_len;
+                write_len = self.bme_data.gas_heater_config.profile_len;
                 let shared_dur =
-                    self.calc_heatr_dur_shared(self.gas_heater_config.shared_heatr_dur);
+                    self.calc_heatr_dur_shared(self.bme_data.gas_heater_config.shared_heatr_dur);
                 self.i2c_set_reg(0x6e, shared_dur).await?;
             }
             OperationMode::Sequential => {
                 let mut count = 0 as usize;
-                while count < self.gas_heater_config.profile_len as usize {
+                while count < self.bme_data.gas_heater_config.profile_len as usize {
                     rh_reg_addr[count] = 0x5a;
                     rh_reg_data[count] = self.calc_res_heat(unsafe {
-                        *self.gas_heater_config.heatr_temp_prof.add(count)
+                        *self.bme_data.gas_heater_config.heatr_temp_prof.add(count)
                     });
                     gw_reg_addr[count] = 0x64 + count as u8;
                     gw_reg_data[count] = self.calc_gas_wait(unsafe {
-                        *self.gas_heater_config.heatr_dur_prof.add(count)
+                        *self.bme_data.gas_heater_config.heatr_dur_prof.add(count)
                     });
                     count += 1;
                 }
@@ -446,9 +449,9 @@ impl<'a> Bme<'a> {
 
         let mut ctrl_gas_data = self.i2c_get_reg(0x70).await?;
 
-        if self.gas_heater_config.enable == 0x01 {
+        if self.bme_data.gas_heater_config.enable == 0x01 {
             hctrl = 0;
-            if self.variant_id == 0x01 {
+            if self.bme_data.variant_id == 0x01 {
                 run_gas = 0x02;
             } else {
                 run_gas = 0x01;
@@ -473,15 +476,15 @@ impl<'a> Bme<'a> {
             temp = 400;
         }
 
-        let var1 = (self.calib.par_gh1 as f32 / 16.0) + 49.0;
-        let var2 = (self.calib.par_gh2 as f32 / 32768.0 * 0.0005) + 49.0;
-        let var3 = self.calib.par_gh3 as f32 / 1024.0;
+        let var1 = (self.bme_data.calib.par_gh1 as f32 / 16.0) + 49.0;
+        let var2 = (self.bme_data.calib.par_gh2 as f32 / 32768.0 * 0.0005) + 49.0;
+        let var3 = self.bme_data.calib.par_gh3 as f32 / 1024.0;
         let var4 = var1 * (1.0 + var2 * (temp as f32));
-        let var5 = var4 + var3 * (self.amb_temp as f32);
+        let var5 = var4 + var3 * (self.bme_data.amb_temp as f32);
         let res_heat = (3.4
             * (var5
-                * (4.0 / (4.0 + self.calib.res_heat_range as f32))
-                * (1.0 / (1.0 + (self.calib.res_heat_val as f32) * 0.002))
+                * (4.0 / (4.0 + self.bme_data.calib.res_heat_range as f32))
+                * (1.0 / (1.0 + (self.bme_data.calib.res_heat_val as f32) * 0.002))
                 - 25.0)) as u8;
         res_heat
     }
@@ -517,7 +520,7 @@ impl<'a> Bme<'a> {
     }
 
     pub async fn init(&mut self) -> Result<(), Error> {
-        self.amb_temp = 25;
+        self.bme_data.amb_temp = 25;
         self.soft_reset().await?;
         let read = self.i2c_get_reg(BME_GET_DEVICE_ADDR).await?;
 
@@ -542,38 +545,47 @@ impl<'a> Bme<'a> {
         let read = self.i2c_get_reg(BME_REG_COEFF3).await?;
         data_array[37..].copy_from_slice(&read[..(5)]);
 
-        self.calib.par_t1 = ((data_array[32] as u16) << 8) | (data_array[31] as u16);
-        self.calib.par_t2 = (((data_array[1] as u16) << 8) | (data_array[0] as u16)) as i16;
-        self.calib.par_t3 = data_array[2] as i8;
-        self.calib.par_p1 = ((data_array[5] as u16) << 8) | (data_array[4] as u16);
-        self.calib.par_p2 = (((data_array[7] as u16) << 8) | (data_array[6] as u16)) as i16;
-        self.calib.par_p3 = data_array[8] as i8;
-        self.calib.par_p4 = (((data_array[11] as u16) << 8) | (data_array[10] as u16)) as i16;
-        self.calib.par_p5 = (((data_array[13] as u16) << 8) | (data_array[12] as u16)) as i16;
-        self.calib.par_p6 = data_array[15] as i8;
-        self.calib.par_p7 = data_array[14] as i8;
-        self.calib.par_p8 = (((data_array[19] as u16) << 8) | (data_array[18] as u16)) as i16;
-        self.calib.par_p9 = (((data_array[21] as u16) << 8) | (data_array[20] as u16)) as i16;
-        self.calib.par_p10 = data_array[22];
-        self.calib.par_h1 = ((data_array[25] as u16) << 4) | ((data_array[24] as u16) & 0xF);
-        self.calib.par_h2 = ((data_array[23] as u16) << 4) | ((data_array[24] as u16) >> 4);
-        self.calib.par_h3 = data_array[26] as i8;
-        self.calib.par_h4 = data_array[27] as i8;
-        self.calib.par_h5 = data_array[28] as i8;
-        self.calib.par_h6 = data_array[29];
-        self.calib.par_h7 = data_array[30] as i8;
-        self.calib.par_gh1 = data_array[35] as i8;
-        self.calib.par_gh2 = (((data_array[34] as u16) << 8) | (data_array[33] as u16)) as i16;
-        self.calib.par_gh3 = data_array[36] as i8;
-        self.calib.res_heat_range = (data_array[39] & 0x30) / 16;
-        self.calib.res_heat_val = data_array[37] as i8;
-        self.calib.range_sw_err = ((data_array[41] & 0xF0) as i8) / 16;
+        self.bme_data.calib.par_t1 = ((data_array[32] as u16) << 8) | (data_array[31] as u16);
+        self.bme_data.calib.par_t2 =
+            (((data_array[1] as u16) << 8) | (data_array[0] as u16)) as i16;
+        self.bme_data.calib.par_t3 = data_array[2] as i8;
+        self.bme_data.calib.par_p1 = ((data_array[5] as u16) << 8) | (data_array[4] as u16);
+        self.bme_data.calib.par_p2 =
+            (((data_array[7] as u16) << 8) | (data_array[6] as u16)) as i16;
+        self.bme_data.calib.par_p3 = data_array[8] as i8;
+        self.bme_data.calib.par_p4 =
+            (((data_array[11] as u16) << 8) | (data_array[10] as u16)) as i16;
+        self.bme_data.calib.par_p5 =
+            (((data_array[13] as u16) << 8) | (data_array[12] as u16)) as i16;
+        self.bme_data.calib.par_p6 = data_array[15] as i8;
+        self.bme_data.calib.par_p7 = data_array[14] as i8;
+        self.bme_data.calib.par_p8 =
+            (((data_array[19] as u16) << 8) | (data_array[18] as u16)) as i16;
+        self.bme_data.calib.par_p9 =
+            (((data_array[21] as u16) << 8) | (data_array[20] as u16)) as i16;
+        self.bme_data.calib.par_p10 = data_array[22];
+        self.bme_data.calib.par_h1 =
+            ((data_array[25] as u16) << 4) | ((data_array[24] as u16) & 0xF);
+        self.bme_data.calib.par_h2 =
+            ((data_array[23] as u16) << 4) | ((data_array[24] as u16) >> 4);
+        self.bme_data.calib.par_h3 = data_array[26] as i8;
+        self.bme_data.calib.par_h4 = data_array[27] as i8;
+        self.bme_data.calib.par_h5 = data_array[28] as i8;
+        self.bme_data.calib.par_h6 = data_array[29];
+        self.bme_data.calib.par_h7 = data_array[30] as i8;
+        self.bme_data.calib.par_gh1 = data_array[35] as i8;
+        self.bme_data.calib.par_gh2 =
+            (((data_array[34] as u16) << 8) | (data_array[33] as u16)) as i16;
+        self.bme_data.calib.par_gh3 = data_array[36] as i8;
+        self.bme_data.calib.res_heat_range = (data_array[39] & 0x30) / 16;
+        self.bme_data.calib.res_heat_val = data_array[37] as i8;
+        self.bme_data.calib.range_sw_err = ((data_array[41] & 0xF0) as i8) / 16;
         Ok(())
     }
 
     async fn get_variant_id(&mut self) -> Result<u8, Error> {
         let read = self.i2c_get_reg(BME_GET_VARIANT_ADDR).await?;
-        self.variant_id = read[0];
+        self.bme_data.variant_id = read[0];
         Ok(read[0])
     }
 

@@ -6,19 +6,19 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl, embassy, peripherals::Peripherals, prelude::*, rng::Rng, system::SystemControl, timer::timg::TimerGroup
+    clock::ClockControl, delay::Delay, embassy, peripherals::Peripherals, prelude::*, rng::Rng,
+    system::SystemControl, timer::timg::TimerGroup,
 };
 
-use log::info;
-use esp_wifi::{ble::controller::asynch::BleConnector, initialize, EspWifiInitFor};
 use bleps::{
     ad_structure::{
-        create_advertising_data,
-        AdStructure,
-        BR_EDR_NOT_SUPPORTED,
-        LE_GENERAL_DISCOVERABLE,
-    }, asynch::Ble, att::Uuid
+        create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
+    },
+    asynch::Ble,
+    att::Uuid,
 };
+use esp_wifi::{ble::controller::asynch::BleConnector, initialize, EspWifiInitFor};
+use log::info;
 
 extern crate alloc;
 use core::mem::MaybeUninit;
@@ -50,6 +50,7 @@ async fn main(_spawner: Spawner) -> ! {
     let clocks = ClockControl::max(system.clock_control).freeze();
 
     let timer_group0 = TimerGroup::new_async(peripherals.TIMG0, &clocks);
+    let delay = Delay::new(&clocks);
     embassy::init(&clocks, timer_group0);
 
     init_heap();
@@ -72,26 +73,25 @@ async fn main(_spawner: Spawner) -> ! {
     let mut ble = Ble::new(connector, esp_wifi::current_millis);
     info!("Connector created");
 
+    info!("{:?}", ble.init().await);
+    info!("{:?}", ble.cmd_set_le_advertising_parameters().await);
+    info!(
+        "{:?}",
+        ble.cmd_set_le_advertising_data(
+            create_advertising_data(&[
+                AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
+                AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
+                AdStructure::CompleteLocalName(esp_hal::chip!()),
+            ])
+            .unwrap()
+        )
+        .await
+    );
+    info!("{:?}", ble.cmd_set_le_advertise_enable(true).await);
+
+    info!("started advertising");
     loop {
-        info!("{:?}", ble.init().await);
-        info!("{:?}", ble.cmd_set_le_advertising_parameters().await);
-        info!(
-            "{:?}",
-            ble.cmd_set_le_advertising_data(
-                create_advertising_data(&[
-                    AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-                    AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-                    AdStructure::CompleteLocalName(esp_hal::chip!()),
-                ])
-                .unwrap()
-            )
-            .await
-        );
-        info!("{:?}", ble.cmd_set_le_advertise_enable(true).await);
-
-        info!("started advertising");
-        loop{
-
-        }
+        delay.delay_millis(2000);
+        info!("BLE task is running");
     }
 }

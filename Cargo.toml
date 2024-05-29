@@ -38,6 +38,12 @@ as7331-rs = { path = "src/as7331-rs" }
 zmod4510-rs = { path = "src/zmod4510-rs" }
 bme688-rs = { path = "src/bme688-rs" }
 
+[features]
+bme688 = []
+as7331 = []
+zmod = []
+
+
 [profile.dev]
 # Rust debug is too slow. 
 # For debug builds always builds with some optimization
@@ -76,6 +82,13 @@ bench = false
 [[bin]]
 name = "ble"
 path = "src/ble.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "vega"
+path = "src/vega.rs"
 test = false
 doctest = false
 bench = false

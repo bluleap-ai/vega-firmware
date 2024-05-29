@@ -2,6 +2,16 @@
 
 pub mod bme;
 #[derive(Copy, Clone, Default)]
+pub struct BmeData {
+    pub variant_id: u8,
+    pub amb_temp: i8,
+    pub calib: CalibrationData,
+    pub config: DeviceConfig,
+    pub gas_heater_config: GasHeaterConfig,
+    pub info_msg: u8,
+}
+
+#[derive(Copy, Clone, Default)]
 pub struct CalibrationData {
     pub par_h1: u16,
     pub par_h2: u16,
@@ -60,6 +70,7 @@ pub enum OperationMode {
     Sequential = 3,
 }
 
+#[derive(Copy, Clone)]
 pub struct GasHeaterConfig {
     pub(crate) enable: u8,
     pub(crate) heatr_temp: u16,

@@ -14,6 +14,12 @@ cargo run --bin vega-as7331
 ```
 cargo run --bin ble
 ```
+
+## Vega project - read data from ZMOD4510, BME688, AS7331 and BLE advertising:
+```
+cargo run --bin vega --features "bme688,zmod,as7331"
+```
+
 ## Advertising format:
 ```
 <temperature(1byte)> <humidity(1byte)> <pressure(1byte)> <gas resistance (4 bytes)> <UV_A (4 bytes)> <UV_B (4 bytes)> <UV_C (4 bytes)> <O3 (2 bytes)> <Fast AQI (2 bytes)>
