@@ -3,6 +3,9 @@
 #![feature(type_alias_impl_trait)]
 #[cfg(feature = "as7331")]
 use as7331_rs::as7331::As7331;
+use bleps::asynch::Ble;
+#[cfg(any(feature = "bme688", feature = "zmod", feature = "as7331"))]
+use bleps::Data;
 #[cfg(feature = "bme688")]
 use bme688_rs::{
     bme::Bme, BmeData, DeviceConfig, Filter, GasHeaterConfig, Odr, OperationMode, Sample,
@@ -16,25 +19,17 @@ use esp_hal::{
 };
 #[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
 use esp_hal::{gpio::Io, i2c::I2C};
+use esp_wifi::{ble::controller::asynch::BleConnector, initialize, EspWifiInitFor};
+#[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
+use log::error;
+use log::info;
+#[cfg(feature = "zmod")]
+use log::{debug, warn};
 #[cfg(feature = "zmod")]
 use zmod4510_rs::{
     commands::Command, zmod::Zmod, Oaq2ndGenHandle, Oaq2ndGenInputs, Oaq2ndGenResults, ZmodData,
     ZmodDev,
 };
-
-use bleps::{
-    ad_structure::{
-        create_advertising_data, AdStructure, BR_EDR_NOT_SUPPORTED, LE_GENERAL_DISCOVERABLE,
-    },
-    asynch::Ble,
-    att::Uuid,
-};
-use esp_wifi::{ble::controller::asynch::BleConnector, initialize, EspWifiInitFor};
-#[cfg(feature = "as7331")]
-use log::error;
-use log::info;
-#[cfg(feature = "zmod")]
-use log::{debug, warn};
 
 extern crate alloc;
 #[cfg(feature = "zmod")]
@@ -100,6 +95,10 @@ async fn main(_spawner: Spawner) -> ! {
     esp_println::logger::init_logger(log::LevelFilter::Info);
 
     let timer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER).alarm0;
+
+    //==================================================================================//
+    //                             Initialize for Bluetooth                             //
+    //==================================================================================//
     let init = initialize(
         EspWifiInitFor::Ble,
         timer,
@@ -108,6 +107,25 @@ async fn main(_spawner: Spawner) -> ! {
         &clocks,
     )
     .unwrap();
+    let mut bluetooth = peripherals.BT;
+
+    let connector = BleConnector::new(&init, &mut bluetooth);
+    let mut ble = Ble::new(connector, esp_wifi::current_millis);
+    info!("Connector created");
+
+    info!("{:?}", ble.init().await);
+    info!("{:?}", ble.cmd_set_le_advertising_parameters().await);
+    #[cfg(any(feature = "bme688", feature = "zmod", feature = "as7331"))]
+    let mut adv_data: [u8; 31] = [
+        // Device name
+        0x05, 0x09, b'V', b'E', b'G', b'A', // Manufacturing data
+        0x18, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    //==================================================================================//
+    //                       Initialize for I2C Interface                               //
+    //==================================================================================//
     let delay = Delay::new(&clocks);
     #[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
@@ -120,9 +138,11 @@ async fn main(_spawner: Spawner) -> ! {
         &clocks,
     );
 
+    //==================================================================================//
+    //                       Initialize for BME688 Sensor                               //
+    //==================================================================================//
     #[cfg(feature = "bme688")]
     let mut bme_data: BmeData;
-
     #[cfg(feature = "bme688")]
     {
         let mut bme_sensor = Bme::new(i2c0, delay);
@@ -150,6 +170,9 @@ async fn main(_spawner: Spawner) -> ! {
         (i2c0, bme_data) = bme_sensor.destroy();
     }
 
+    //==================================================================================//
+    //                       Initialize for AS7331 sensor                               //
+    //==================================================================================//
     #[cfg(feature = "as7331")]
     {
         let mut as7331_sensor = As7331::new(i2c0, delay);
@@ -170,6 +193,9 @@ async fn main(_spawner: Spawner) -> ! {
         i2c0 = as7331_sensor.destroy();
     }
 
+    //==================================================================================//
+    //                       Initialize for ZMOD4510 sensor                             //
+    //==================================================================================//
     #[cfg(feature = "zmod")]
     let mut zmod_data: ZmodData;
     #[cfg(feature = "zmod")]
@@ -238,31 +264,9 @@ async fn main(_spawner: Spawner) -> ! {
         (i2c0, zmod_data) = zmod_sensor.destroy();
     }
 
-    let mut bluetooth = peripherals.BT;
-
-    let connector = BleConnector::new(&init, &mut bluetooth);
-    let mut ble = Ble::new(connector, esp_wifi::current_millis);
-    info!("Connector created");
-
-    info!("{:?}", ble.init().await);
-    info!("{:?}", ble.cmd_set_le_advertising_parameters().await);
-    info!(
-        "{:?}",
-        ble.cmd_set_le_advertising_data(
-            create_advertising_data(&[
-                AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
-                AdStructure::ServiceUuids16(&[Uuid::Uuid16(0x1809)]),
-                AdStructure::CompleteLocalName(esp_hal::chip!()),
-            ])
-            .unwrap()
-        )
-        .await
-    );
-    info!("{:?}", ble.cmd_set_le_advertise_enable(true).await);
-
-    info!("started advertising");
-    #[cfg(feature = "bme688")]
-    let mut sample_count = 0;
+    //==================================================================================//
+    //                          MAIN LOOP FOR APPLICATION                               //
+    //==================================================================================//
     loop {
         #[cfg(feature = "bme688")]
         {
@@ -277,16 +281,18 @@ async fn main(_spawner: Spawner) -> ! {
             let sensor_data = bme_sensor.get_data(OperationMode::Forced).await.unwrap();
 
             info!(
-                    "Count: {} - temperature: {:.2}, pressure: {:.2}, humidity: {:.2}, gas_resistance: {:.2}, status: {:x}",
-                    sample_count,
+                    "BME688: temperature: {:.2}, pressure: {:.2}, humidity: {:.2}, gas_resistance: {:.2}, status: {:x}",
                     sensor_data.temperature,
-                    sensor_data.pressure,
+                    sensor_data.pressure / 1000.0,
                     sensor_data.humidity,
                     sensor_data.gas_resistance,
                     sensor_data.status,
                 );
+            adv_data[8] = sensor_data.temperature as u8;
+            adv_data[9] = sensor_data.humidity as u8;
+            adv_data[10] = (sensor_data.pressure / 1000.0) as u8;
+            adv_data[11..15].copy_from_slice(&sensor_data.gas_resistance.to_le_bytes());
             (i2c0, bme_data) = bme_sensor.destroy();
-            sample_count += 1;
         }
         #[cfg(feature = "zmod")]
         {
@@ -374,6 +380,10 @@ async fn main(_spawner: Spawner) -> ! {
                     info!(" O3_conc_ppb = {:.3}", oaq_result.o3_conc_ppb);
                     info!(" Fast AQI = {}", oaq_result.fast_aqi);
                     info!(" EPA AQI = {}", oaq_result.epa_aqi);
+                    adv_data[27] = ((oaq_result.o3_conc_ppb as u16 >> 8) & 0xff) as u8;
+                    adv_data[28] = (oaq_result.o3_conc_ppb as u16 & 0xff) as u8;
+                    adv_data[29] = ((oaq_result.fast_aqi >> 8) & 0xff) as u8;
+                    adv_data[30] = (oaq_result.fast_aqi & 0xff) as u8;
                 }
             }
             (i2c0, zmod_data) = zmod_sensor.destroy();
@@ -391,19 +401,48 @@ async fn main(_spawner: Spawner) -> ! {
                 let uv_a = all_data[1];
                 let uv_b = all_data[2];
                 let uv_c = all_data[3];
-
+                let convert_uv_a = uv_a as f32 * lsb_a;
+                let convert_uv_b = uv_b as f32 * lsb_b;
+                let convert_uv_c = uv_c as f32 * lsb_c;
                 info!("AS7331 UV DATA:");
-                info!("AS7331 UVA: {:.2} (uW/cm^2)", uv_a as f32 * lsb_a);
-                info!("AS7331 UVB: {:.2} (uW/cm^2)", uv_b as f32 * lsb_b);
-                info!("AS7331 UVC: {:.2} (uW/cm^2)", uv_c as f32 * lsb_c);
+                info!("AS7331 UVA: {:.2} (uW/cm^2)", convert_uv_a);
+                info!("AS7331 UVB: {:.2} (uW/cm^2)", convert_uv_b);
+                info!("AS7331 UVC: {:.2} (uW/cm^2)", convert_uv_c);
                 info!(
                     "AS7331 Temperature: {:.2} (Celcius)",
                     temp as f32 * 0.05 - 66.9
                 );
+                adv_data[15..19].copy_from_slice(&convert_uv_a.to_le_bytes());
+                adv_data[19..23].copy_from_slice(&convert_uv_b.to_le_bytes());
+                adv_data[23..27].copy_from_slice(&convert_uv_c.to_le_bytes());
             }
             i2c0 = as7331_sensor.destroy();
         }
-        delay.delay_millis(100);
-        info!("Vega project is running");
+        delay.delay_millis(2000);
+        #[cfg(any(feature = "bme688", feature = "zmod", feature = "as7331"))]
+        {
+            let mut data = Data::default();
+            data.append(&[0]);
+
+            for item in adv_data.iter() {
+                data.append(&[*item]);
+            }
+
+            let len = data.len - 1;
+            data.set(0, len as u8);
+
+            if len > 31 {
+                error!("ERROR: Advertise data is too long");
+            }
+
+            for _ in 0..(31 - len) {
+                data.append(&[0]);
+            }
+            // create_advertising_data
+            info!("{:?}", ble.cmd_set_le_advertising_data(data).await);
+            info!("{:?}", ble.cmd_set_le_advertise_enable(true).await);
+            info!("Advertising data {:?}", data);
+            info!("started advertising");
+        }
     }
 }
