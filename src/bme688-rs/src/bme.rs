@@ -477,7 +477,7 @@ impl<'a> Bme<'a> {
         }
 
         let var1 = (self.bme_data.calib.par_gh1 as f32 / 16.0) + 49.0;
-        let var2 = (self.bme_data.calib.par_gh2 as f32 / 32768.0 * 0.0005) + 49.0;
+        let var2 = (self.bme_data.calib.par_gh2 as f32 / 32768.0 * 0.0005) + 0.00235;
         let var3 = self.bme_data.calib.par_gh3 as f32 / 1024.0;
         let var4 = var1 * (1.0 + var2 * (temp as f32));
         let var5 = var4 + var3 * (self.bme_data.amb_temp as f32);
