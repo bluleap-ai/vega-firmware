@@ -28,6 +28,7 @@ cargo run --bin vega --features "all"
 **Total: 23 bytes**
 - temperature 0-100 (celsius)
 - humidity 0-100 (%)
+- pressure 0-200 (kPa)
 - gas resistance: float (f32) (kOhm)
 - UV_A: float (f32) (uW/cm^2)
 - UV_B: float (f32) (uW/cm^2)
