@@ -67,8 +67,8 @@ impl<'a> Bme<'a> {
         meas_cycles += os_to_meas_cycle[self.bme_data.config.os_hum as usize] as u32;
 
         meas_dur = meas_cycles * 1963;
-        meas_dur = (meas_dur + 477) * 4;
-        meas_dur = (meas_dur + 477) * 5;
+        meas_dur += 477 * 4;
+        meas_dur += 477 * 5;
 
         if op_mode != OperationMode::Parallel {
             meas_dur += 1000;
@@ -350,7 +350,8 @@ impl<'a> Bme<'a> {
         self.bme_data.config = conf;
         let cur_op_mode = self.get_op_mode().await?;
         self.set_op_mode(OperationMode::Sleep).await?;
-        let mut data = self.i2c_get_reg(0x71).await?;
+        let mut data: [u8; 32] = self.i2c_get_reg(0x71).await?;
+
         self.boundary_check();
 
         data[4] = (data[4] & !0x1C) | ((self.bme_data.config.filter << 2) & 0x1C);
@@ -520,7 +521,6 @@ impl<'a> Bme<'a> {
     }
 
     pub async fn init(&mut self) -> Result<(), Error> {
-        self.bme_data.amb_temp = 25;
         self.soft_reset().await?;
         let read = self.i2c_get_reg(BME_GET_DEVICE_ADDR).await?;
 
@@ -592,7 +592,9 @@ impl<'a> Bme<'a> {
     // need a 10ms delay after reset
     async fn soft_reset(&mut self) -> Result<(), Error> {
         let cmd = 0xb6;
-        self.i2c_set_reg(BME_SOFT_RST_ADDR, cmd).await
+        self.i2c_set_reg(BME_SOFT_RST_ADDR, cmd).await?;
+        self.delay.delay_millis(10);
+        Ok(())
     }
 
     async fn i2c_set_reg(&mut self, reg: u8, cmd: u8) -> Result<(), Error> {
