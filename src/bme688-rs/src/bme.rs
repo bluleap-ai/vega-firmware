@@ -248,25 +248,25 @@ impl<'a> Bme<'a> {
     }
 
     fn calc_pressure(&mut self, pres_adc: u32) -> f32 {
-        let mut var1 = self.bme_data.calib.t_fine / 2.0 - 64000.0;
-        let mut var2 = var1 * var1 * (self.bme_data.calib.par_p6 as f32 / 131072.0);
-        var2 = var2 + var1 * (self.bme_data.calib.par_p5 as f32 * 2.0);
-        var2 = var2 / 4.0 + (self.bme_data.calib.par_p4 as f32 * 65536.0);
-        var1 = ((self.bme_data.calib.par_p3 as f32) * var1 * var1 / 16384.0
-            + self.bme_data.calib.par_p2 as f32 * var1)
+        let mut var1 = (self.bme_data.calib.t_fine / 2.0) - 64000.0;
+        let mut var2 = var1 * var1 * ((self.bme_data.calib.par_p6 as f32) / 131072.0);
+        var2 = var2 + (var1 * (self.bme_data.calib.par_p5 as f32) * 2.0);
+        var2 = (var2 / 4.0) + ((self.bme_data.calib.par_p4 as f32) * 65536.0);
+        var1 = ((((self.bme_data.calib.par_p3 as f32) * var1 * var1) / 16384.0)
+            + ((self.bme_data.calib.par_p2 as f32) * var1))
             / 524288.0;
-        var1 = (1.0 + var1 / 32768.0) * self.bme_data.calib.par_p1 as f32;
-        let mut calc_pres = 1048576.0 - pres_adc as f32;
+        var1 = (1.0 + (var1 / 32768.0)) * (self.bme_data.calib.par_p1 as f32);
+        let mut calc_pres = 1048576.0 - (pres_adc as f32);
 
         if var1 != 0.0 {
-            calc_pres = (calc_pres - var2 / 4096.0) * 6250.0 / var1;
-            var1 = self.bme_data.calib.par_p9 as f32 * calc_pres * calc_pres / 2147483648.0;
-            var2 = calc_pres * (self.bme_data.calib.par_p8 as f32 / 32768.0);
+            calc_pres = ((calc_pres - (var2 / 4096.0)) * 6250.0) / var1;
+            var1 = ((self.bme_data.calib.par_p9 as f32) * calc_pres * calc_pres) / 2147483648.0;
+            var2 = calc_pres * ((self.bme_data.calib.par_p8 as f32) / 32768.0);
             let var3 = (calc_pres / 256.0)
                 * (calc_pres / 256.0)
                 * (calc_pres / 256.0)
-                * (self.bme_data.calib.par_p10 as f32 / 131072.0);
-            calc_pres + (var1 + var2 + var3 + self.bme_data.calib.par_p7 as f32 / 128.0) / 16.0
+                * ((self.bme_data.calib.par_p10 as f32) / 131072.0);
+            calc_pres + (var1 + var2 + var3 + ((self.bme_data.calib.par_p7 as f32) / 128.0)) / 16.0
         } else {
             0.0
         }
@@ -356,7 +356,7 @@ impl<'a> Bme<'a> {
 
         data[4] = (data[4] & !0x1C) | ((self.bme_data.config.filter << 2) & 0x1C);
         data[3] = (data[3] & !0xE0) | ((self.bme_data.config.os_temp << 5) & 0xE0);
-        data[2] = (data[2] & !0x1C) | ((self.bme_data.config.os_pres << 2) & 0x1C);
+        data[3] = (data[3] & !0x1C) | ((self.bme_data.config.os_pres << 2) & 0x1C);
         data[1] = (data[1] & !0x07) | ((self.bme_data.config.os_hum << 2) & 0x07);
 
         if self.bme_data.config.odr != 8 {
