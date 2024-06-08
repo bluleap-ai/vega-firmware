@@ -4,5 +4,6 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-esp-hal = {git = "https://github.com/esp-rs/esp-hal", branch = "main", features = [ "esp32c6", "embassy-time-timg0", "async", "embassy"] }
+esp-hal = {version = "0.18.0", features = [ "esp32c6", "async"] }
+esp-hal-embassy     = { version = "0.1.0", features = ["time-timg0"] }
 log = { version = "0.4.20" }

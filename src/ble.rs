@@ -6,7 +6,7 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl, delay::Delay, embassy, peripherals::Peripherals, prelude::*, rng::Rng,
+    clock::ClockControl, delay::Delay, peripherals::Peripherals, prelude::*, rng::Rng,
     system::SystemControl, timer::timg::TimerGroup,
 };
 
@@ -51,7 +51,7 @@ async fn main(_spawner: Spawner) -> ! {
 
     let timer_group0 = TimerGroup::new_async(peripherals.TIMG0, &clocks);
     let delay = Delay::new(&clocks);
-    embassy::init(&clocks, timer_group0);
+    esp_hal_embassy::init(&clocks, timer_group0);
 
     init_heap();
 
