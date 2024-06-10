@@ -78,14 +78,17 @@ async fn main(_spawner: Spawner) -> ! {
 
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    io.pins.gpio3.set_high();
-    delay.delay_millis(500);
-    io.pins.gpio3.set_low();
+    {
+        // reset Vsen when powering up
+        io.pins.gpio10.set_high();
+        delay.delay_millis(500);
+        io.pins.gpio10.set_low();
+    }
 
     let i2c0 = I2C::new_async(
         peripherals.I2C0,
-        io.pins.gpio4,
-        io.pins.gpio5,
+        io.pins.gpio6,
+        io.pins.gpio7,
         400.kHz(),
         &clocks,
     );

@@ -11,7 +11,7 @@ use esp_hal::{
     system::SystemControl, timer::timg::TimerGroup,
 };
 
-use log::{error, info};
+use log::{error, info, warn};
 
 extern crate alloc;
 use core::mem::MaybeUninit;
@@ -52,14 +52,17 @@ async fn main(_spawner: Spawner) -> ! {
 
     let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
 
-    io.pins.gpio3.set_high();
-    delay.delay_millis(500);
-    io.pins.gpio3.set_low();
+    {
+        // reset Vsen when powering up
+        io.pins.gpio10.set_high();
+        delay.delay_millis(500);
+        io.pins.gpio10.set_low();
+    }
 
     let i2c0 = I2C::new_async(
         peripherals.I2C0,
-        io.pins.gpio4,
-        io.pins.gpio5,
+        io.pins.gpio6,
+        io.pins.gpio7,
         400.kHz(),
         &clocks,
     );
@@ -83,6 +86,7 @@ async fn main(_spawner: Spawner) -> ! {
     }
 
     loop {
+        delay.delay_millis(100);
         let status = as7331_sensor.get_status().await.unwrap();
         if (status & 0x0008) != 0 {
             let all_data = as7331_sensor.read_all_data().await.unwrap();
@@ -99,6 +103,8 @@ async fn main(_spawner: Spawner) -> ! {
                 "AS7331 Temperature: {:.2} (Celcius)",
                 temp as f32 * 0.05 - 66.9
             );
+        } else {
+            warn!("STATUS: {:04X}", status);
         }
     }
 }

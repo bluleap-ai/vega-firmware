@@ -66,7 +66,7 @@ impl<'a> As7331<'a> {
     pub async fn get_status(&mut self) -> Result<u16, Error> {
         let mut data = [0u8; 2];
         self.i2c_read_bytes(AS7331_STATUS, &mut data).await?;
-        Ok(((data[1] as u16) << 8) | (data[0] as u16))
+        Ok(((data[0] as u16) << 8) | (data[1] as u16))
     }
 
     pub async fn read_temp_data(&mut self) -> Result<u16, Error> {
@@ -146,31 +146,19 @@ impl<'a> As7331<'a> {
 
     pub async fn reset(&mut self) -> Result<(), Error> {
         let mut data = [0u8; 22];
-        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await {
-            Err(e) => return Err(e),
-            _ => {}
-        }
-
+        self.i2c_write_read_cmd(AS7331_OSR, &mut data).await?;
         self.i2c_write_cmd(AS7331_OSR, data[0] | 0x08).await
     }
 
     pub async fn set_configuration_mode(&mut self) -> Result<(), Error> {
         let mut data = [0u8; 22];
-        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await {
-            Err(e) => return Err(e),
-            _ => {}
-        }
-
+        self.i2c_write_read_cmd(AS7331_OSR, &mut data).await?;
         self.i2c_write_cmd(AS7331_OSR, data[0] | 0x02).await
     }
 
     pub async fn set_measurement_mode(&mut self) -> Result<(), Error> {
         let mut data = [0u8; 22];
-        match self.i2c_write_read_cmd(AS7331_OSR, &mut data).await {
-            Err(e) => return Err(e),
-            _ => {}
-        }
-
+        self.i2c_write_read_cmd(AS7331_OSR, &mut data).await?;
         self.i2c_write_cmd(AS7331_OSR, data[0] | 0x83).await
     }
 }

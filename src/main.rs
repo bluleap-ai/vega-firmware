@@ -92,7 +92,7 @@ async fn main(_spawner: Spawner) -> ! {
 
     init_heap();
 
-    esp_println::logger::init_logger(log::LevelFilter::Info);
+    esp_println::logger::init_logger(log::LevelFilter::Debug);
 
     let timer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER).alarm0;
 
@@ -127,17 +127,27 @@ async fn main(_spawner: Spawner) -> ! {
     //                       Initialize for I2C Interface                               //
     //==================================================================================//
     let delay = Delay::new(&clocks);
+
     #[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
-    let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    let mut io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
+    #[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
+    {
+        // reset Vsen when powering up
+        io.pins.gpio10.set_high();
+        delay.delay_millis(500);
+        io.pins.gpio10.set_low();
+    }
+
     #[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
     let mut i2c0 = I2C::new_async(
         peripherals.I2C0,
-        io.pins.gpio4,
-        io.pins.gpio5,
+        io.pins.gpio6,
+        io.pins.gpio7,
         400.kHz(),
         &clocks,
     );
 
+    info!("Initialize the I2C OK");
     //==================================================================================//
     //                       Initialize for BME688 Sensor                               //
     //==================================================================================//
@@ -145,8 +155,12 @@ async fn main(_spawner: Spawner) -> ! {
     let mut bme_data: BmeData;
     #[cfg(feature = "bme688")]
     {
+        info!("Start initializing for BME688 sensor");
         let mut bme_sensor = Bme::new(i2c0, delay);
-        let _ = bme_sensor.init().await;
+        match bme_sensor.init().await {
+            Ok(()) => info!("Initialize for BME sensor OK"),
+            Err(e) => error!("Failed to init BME sensor {:?}", e),
+        }
         let _ = bme_sensor
             .set_config(
                 DeviceConfig::default()
@@ -175,6 +189,7 @@ async fn main(_spawner: Spawner) -> ! {
     //==================================================================================//
     #[cfg(feature = "as7331")]
     {
+        info!("Start initializing for AS7331 sensor");
         let mut as7331_sensor = As7331::new(i2c0, delay);
 
         let _ = as7331_sensor.power_up().await;
@@ -183,13 +198,23 @@ async fn main(_spawner: Spawner) -> ! {
         let chip_id = as7331_sensor.get_chip_id().await.unwrap();
 
         if chip_id == 0x21 {
-            let _ = as7331_sensor.set_configuration_mode().await;
-            let _ = as7331_sensor.init(0, 0, 0x01, 40, 8, 9).await;
+            match as7331_sensor.set_configuration_mode().await {
+                Ok(()) => info!("Set configuration mode for AS7331 OK"),
+                Err(e) => error!("I2C FAILED: {:?}", e),
+            }
+            match as7331_sensor.init(0, 0, 0x01, 40, 8, 9).await {
+                Ok(()) => info!("Init for AS7331 OK"),
+                Err(e) => error!("I2C FAILED: {:?}", e),
+            }
             delay.delay_millis(100);
-            let _ = as7331_sensor.set_measurement_mode().await;
+            match as7331_sensor.set_measurement_mode().await {
+                Ok(()) => info!("set measurement mode for AS7331 OK"),
+                Err(e) => error!("I2C FAILED: {:?}", e),
+            }
         } else {
             error!("Wrong chip id: {}", chip_id);
         }
+        delay.delay_millis(100);
         i2c0 = as7331_sensor.destroy();
     }
 
@@ -214,6 +239,7 @@ async fn main(_spawner: Spawner) -> ! {
     }
     #[cfg(feature = "zmod")]
     {
+        info!("Start initializing for ZMOD4510 sensor");
         let mut zmod_sensor = Zmod::new(i2c0, delay).await;
         match zmod_sensor.read_info().await {
             true => {
@@ -415,6 +441,8 @@ async fn main(_spawner: Spawner) -> ! {
                 adv_data[15..19].copy_from_slice(&convert_uv_a.to_le_bytes());
                 adv_data[19..23].copy_from_slice(&convert_uv_b.to_le_bytes());
                 adv_data[23..27].copy_from_slice(&convert_uv_c.to_le_bytes());
+            } else {
+                warn!("AS7331 status is not 0x0008: {}", status);
             }
             i2c0 = as7331_sensor.destroy();
         }
