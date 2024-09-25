@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
 #[cfg(feature = "as7331")]
 use as7331_rs::as7331::As7331;
 use bleps::asynch::Ble;
@@ -14,8 +13,8 @@ use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::{
-    clock::ClockControl, delay::Delay, peripherals::Peripherals, prelude::*, rng::Rng,
-    system::SystemControl, timer::timg::TimerGroup,
+    clock::ClockControl, delay::Delay, peripherals::Peripherals, rng::Rng, system::SystemControl,
+    timer::timg::TimerGroup,
 };
 #[cfg(any(feature = "as7331", feature = "bme688", feature = "zmod"))]
 use esp_hal::{gpio::Io, i2c::I2C};
@@ -81,27 +80,24 @@ async fn run() {
     }
 }
 
-#[main]
+#[esp_hal_embassy::main]
 async fn main(_spawner: Spawner) -> ! {
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
 
-    let timer_group0 = TimerGroup::new_async(peripherals.TIMG0, &clocks);
-    esp_hal_embassy::init(&clocks, timer_group0);
+    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
 
     init_heap();
 
     esp_println::logger::init_logger(log::LevelFilter::Debug);
-
-    let timer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER).alarm0;
 
     //==================================================================================//
     //                             Initialize for Bluetooth                             //
     //==================================================================================//
     let init = initialize(
         EspWifiInitFor::Ble,
-        timer,
+        timg0.timer0,
         Rng::new(peripherals.RNG),
         peripherals.RADIO_CLK,
         &clocks,

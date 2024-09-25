@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
 
 use as7331_rs::as7331::As7331;
 use embassy_executor::Spawner;
@@ -27,7 +26,6 @@ fn init_heap() {
         ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
     }
 }
-
 #[embassy_executor::task]
 async fn run() {
     loop {
@@ -36,14 +34,14 @@ async fn run() {
     }
 }
 
-#[main]
+#[esp_hal_embassy::main]
 async fn main(_spawner: Spawner) -> ! {
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::boot_defaults(system.clock_control).freeze();
 
-    let timer_group0 = TimerGroup::new_async(peripherals.TIMG0, &clocks);
-    esp_hal_embassy::init(&clocks, timer_group0);
+    let timg0 = TimerGroup::new(peripherals.TIMG0, &clocks);
+    esp_hal_embassy::init(&clocks, timg0.timer0);
 
     let delay = Delay::new(&clocks);
     init_heap();
